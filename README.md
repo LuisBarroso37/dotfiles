@@ -67,31 +67,25 @@ All configs will be in place and your shell, editor, and tools will pick them up
 
 ## How Stow works in practice
 
-Each tool has its own subdirectory in this repo. Inside it, the folder structure mirrors `~/` exactly:
+Each tool has its own subdirectory at the root of this repo, containing its config files directly. A `.stowrc` sets the stow target to `~/.config`, so running `stow .` creates a directory-level symlink in `~/.config/` for each package:
 
 ```
 dotfiles/
-  nvim/
-    .config/
-      nvim/          ← actual config files here
-  tmux/
-    .config/
-      tmux/
-        tmux.conf
-  starship/
-    .config/
-      starship.toml
+  nvim/          →  ~/.config/nvim  (symlink to ~/dotfiles/nvim/)
+    init.lua
+    lua/
+  tmux/          →  ~/.config/tmux  (symlink to ~/dotfiles/tmux/)
+    tmux.conf
+  starship.toml  →  ~/.config/starship.toml
 ```
 
-Running `stow nvim` from inside `~/dotfiles/` tells Stow: "look inside `nvim/`, and for every file and folder in there, create a symlink one level up (in `~/`) at the same relative path."
-
-Result: `~/.config/nvim` becomes a symlink to `~/dotfiles/nvim/.config/nvim`.
+The key: `stow .` treats the entire dotfiles directory as a single package. Each top-level folder gets folded into one symlink in `~/.config/`, rather than symlinking individual files. Files like `README.md` and `install.sh` are excluded via `.stowrc` ignore rules.
 
 To add a new tool to the repo:
 
-1. Create its package folder: `mkdir -p ~/dotfiles/<tool>/.config/<tool>/`
-2. Move the config there: `mv ~/.config/<tool>/ ~/dotfiles/<tool>/.config/`
-3. Run stow: `cd ~/dotfiles && stow <tool>`
+1. Create its folder: `mkdir ~/dotfiles/<tool>/`
+2. Move the config there: `mv ~/.config/<tool>/ ~/dotfiles/<tool>/`
+3. Restow: `cd ~/dotfiles && stow .`
 
 ---
 
@@ -106,9 +100,9 @@ chmod +x migrate.sh
 ```
 
 This will:
-1. Move each existing config from `~/.config/<tool>/` into `~/dotfiles/<tool>/.config/<tool>/`
+1. Move each existing config from `~/.config/<tool>/` into `~/dotfiles/<tool>/`
 2. Install Stow if missing
-3. Run Stow for each package to put the symlinks back in place
+3. Run `stow .` to put the symlinks in place
 
 After that, push to GitHub:
 

@@ -26,13 +26,7 @@ brew install \
 
 echo "==> Stowing dotfiles"
 cd "$DOTFILES"
-
-PACKAGES=(nvim tmux sesh ghostty fish starship atuin)
-
-for pkg in "${PACKAGES[@]}"; do
-  echo "  -> stow $pkg"
-  stow --restow --target="$HOME" "$pkg"
-done
+stow .
 
 echo "==> Setting fish as default shell (if not already)"
 FISH_PATH="$(which fish)"

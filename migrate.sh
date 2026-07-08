@@ -4,6 +4,7 @@
 set -e
 
 DOTFILES="$HOME/dotfiles"
+SCRATCH=$(mktemp -d)
 
 move_config() {
   local src="$1"
@@ -19,26 +20,18 @@ move_config() {
 
 echo "==> Moving configs into dotfiles repo"
 
-# neovim
-move_config "$HOME/.config/nvim"              "$DOTFILES/nvim/.config/nvim"
-
-# tmux
-move_config "$HOME/.config/tmux/tmux.conf"   "$DOTFILES/tmux/.config/tmux/tmux.conf"
-
-# sesh
-move_config "$HOME/.config/sesh/sesh.toml"   "$DOTFILES/sesh/.config/sesh/sesh.toml"
-
-# ghostty
-move_config "$HOME/.config/ghostty"          "$DOTFILES/ghostty/.config/ghostty"
-
-# fish
-move_config "$HOME/.config/fish"             "$DOTFILES/fish/.config/fish"
-
-# starship
-move_config "$HOME/.config/starship.toml"    "$DOTFILES/starship/.config/starship.toml"
-
-# atuin
-move_config "$HOME/.config/atuin/config.toml" "$DOTFILES/atuin/.config/atuin/config.toml"
+move_config "$HOME/.config/nvim"              "$DOTFILES/nvim"
+move_config "$HOME/.config/tmux"              "$DOTFILES/tmux"
+move_config "$HOME/.config/sesh"              "$DOTFILES/sesh"
+move_config "$HOME/.config/ghostty"           "$DOTFILES/ghostty"
+move_config "$HOME/.config/fish"              "$DOTFILES/fish"
+move_config "$HOME/.config/starship.toml"     "$DOTFILES/starship.toml"
+move_config "$HOME/.config/atuin/config.toml" "$SCRATCH/atuin_config.toml"
+if [ -f "$SCRATCH/atuin_config.toml" ]; then
+  mkdir -p "$DOTFILES/atuin"
+  mv "$SCRATCH/atuin_config.toml" "$DOTFILES/atuin/config.toml"
+  echo "  moved: ~/.config/atuin/config.toml -> $DOTFILES/atuin/config.toml"
+fi
 
 echo ""
 echo "==> Installing stow (if missing)"
@@ -48,11 +41,7 @@ fi
 
 echo "==> Creating symlinks via stow"
 cd "$DOTFILES"
-PACKAGES=(nvim tmux sesh ghostty fish starship atuin)
-for pkg in "${PACKAGES[@]}"; do
-  echo "  -> stow $pkg"
-  stow --target="$HOME" "$pkg"
-done
+stow .
 
 echo ""
 echo "Done! Your configs are now tracked in ~/dotfiles"
