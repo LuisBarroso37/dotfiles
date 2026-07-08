@@ -10,7 +10,7 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [tmux](https://github.com/tmux/tmux) | `.config/tmux/tmux.conf` | Terminal multiplexer |
 | [sesh](https://github.com/joshmedeski/sesh) | `.config/sesh/sesh.toml` | tmux session manager |
 | [Ghostty](https://ghostty.org) | `.config/ghostty/` | Terminal emulator |
-| [fish](https://fishshell.com) | `.config/fish/` | Shell |
+| [Zsh](https://zsh.sourceforge.io) | `.zshrc`, `.zprofile`, `.zshenv` | Shell |
 | [Starship](https://starship.rs) | `.config/starship.toml` | Shell prompt |
 | [Atuin](https://atuin.sh) | `.config/atuin/config.toml` | Shell history search |
 | [zoxide](https://github.com/ajeetdsouza/zoxide) | — | Smarter `cd` |
@@ -56,8 +56,7 @@ This will:
 - Install [Homebrew](https://brew.sh) (if missing)
 - Install all tools listed above via `brew install`
 - Install **GNU Stow** (`brew install stow`) — required to create the symlinks
-- Use Stow to symlink all configs to their correct locations under `~/`
-- Set fish as the default shell
+- Use Stow to symlink all configs to their correct locations
 
 ### 3. Restart your terminal
 
@@ -80,6 +79,13 @@ dotfiles/
 ```
 
 The key: `stow .` treats the entire dotfiles directory as a single package. Each top-level folder gets folded into one symlink in `~/.config/`, rather than symlinking individual files. Files like `README.md` and `install.sh` are excluded via `.stowrc` ignore rules.
+
+**Zsh is a special case** — its dotfiles (`.zshrc`, `.zprofile`, `.zshenv`) live directly in `~`, not `~/.config/`. The `zsh/` package is excluded from `stow .` and stowed separately with an explicit target:
+
+```sh
+stow .                     # all ~/.config packages
+stow --target="$HOME" zsh  # zsh dotfiles → ~
+```
 
 To add a new tool to the repo:
 

@@ -4,7 +4,6 @@
 set -e
 
 DOTFILES="$HOME/dotfiles"
-SCRATCH=$(mktemp -d)
 
 move_config() {
   local src="$1"
@@ -20,18 +19,25 @@ move_config() {
 
 echo "==> Moving configs into dotfiles repo"
 
+# ~/.config packages
 move_config "$HOME/.config/nvim"              "$DOTFILES/nvim"
 move_config "$HOME/.config/tmux"              "$DOTFILES/tmux"
 move_config "$HOME/.config/sesh"              "$DOTFILES/sesh"
 move_config "$HOME/.config/ghostty"           "$DOTFILES/ghostty"
-move_config "$HOME/.config/fish"              "$DOTFILES/fish"
 move_config "$HOME/.config/starship.toml"     "$DOTFILES/starship.toml"
-move_config "$HOME/.config/atuin/config.toml" "$SCRATCH/atuin_config.toml"
-if [ -f "$SCRATCH/atuin_config.toml" ]; then
+
+# atuin config.toml only (keep the rest of ~/.config/atuin/ intact)
+if [ -f "$HOME/.config/atuin/config.toml" ] && [ ! -L "$HOME/.config/atuin/config.toml" ]; then
   mkdir -p "$DOTFILES/atuin"
-  mv "$SCRATCH/atuin_config.toml" "$DOTFILES/atuin/config.toml"
+  mv "$HOME/.config/atuin/config.toml" "$DOTFILES/atuin/config.toml"
   echo "  moved: ~/.config/atuin/config.toml -> $DOTFILES/atuin/config.toml"
 fi
+
+# zsh dotfiles (live in ~, not ~/.config)
+mkdir -p "$DOTFILES/zsh"
+move_config "$HOME/.zshrc"   "$DOTFILES/zsh/.zshrc"
+move_config "$HOME/.zprofile" "$DOTFILES/zsh/.zprofile"
+move_config "$HOME/.zshenv"  "$DOTFILES/zsh/.zshenv"
 
 echo ""
 echo "==> Installing stow (if missing)"
@@ -41,8 +47,8 @@ fi
 
 echo "==> Creating symlinks via stow"
 cd "$DOTFILES"
-stow .
+stow .                        # ~/.config packages
+stow --target="$HOME" zsh     # zsh dotfiles
 
 echo ""
 echo "Done! Your configs are now tracked in ~/dotfiles"
-echo "Push to GitHub: cd ~/dotfiles && git init && git remote add origin <url> && git push -u origin main"

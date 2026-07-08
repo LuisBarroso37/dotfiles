@@ -13,7 +13,6 @@ brew install \
   neovim \
   tmux \
   sesh \
-  fish \
   starship \
   atuin \
   zoxide \
@@ -26,17 +25,8 @@ brew install \
 
 echo "==> Stowing dotfiles"
 cd "$DOTFILES"
-stow .
-
-echo "==> Setting fish as default shell (if not already)"
-FISH_PATH="$(which fish)"
-if ! grep -q "$FISH_PATH" /etc/shells; then
-  echo "$FISH_PATH" | sudo tee -a /etc/shells
-fi
-if [ "$SHELL" != "$FISH_PATH" ]; then
-  chsh -s "$FISH_PATH"
-  echo "  Shell changed to fish — restart your terminal"
-fi
+stow .                        # ~/.config packages (nvim, tmux, sesh, ghostty, starship, atuin)
+stow --target="$HOME" zsh     # zsh dotfiles live in ~, not ~/.config
 
 echo ""
 echo "Done! Restart your terminal to apply all changes."
