@@ -1,0 +1,9 @@
+.DS_Store
+
+# Neovim state (not config)
+nvim/.config/nvim/.cache/
+nvim/.config/nvim/plugin/
+
+# Atuin history DB (only config, not the database)
+atuin/.config/atuin/history.db
+atuin/.config/atuin/*.db
