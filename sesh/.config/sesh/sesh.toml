@@ -1,0 +1,16 @@
+[default_session]
+startup_command = "nvim"
+
+blacklist = ["scratch"]
+
+[[session]]
+name = "dotfiles"
+path = "~/.config"
+
+[[session]]
+name = "portal"
+path = "~/Desktop/into.care/portal"
+
+[[session]]
+name = "intocare"
+path = "~/Desktop/into.care/intocare"
