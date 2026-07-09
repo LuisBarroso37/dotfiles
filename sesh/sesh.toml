@@ -5,7 +5,7 @@ blacklist = ["scratch"]
 
 [[session]]
 name = "dotfiles"
-path = "~/.config"
+path = "~/dotfiles"
 
 [[session]]
 name = "portal"

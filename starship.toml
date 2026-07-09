@@ -10,9 +10,6 @@ command_timeout = 1000
 vicmd_symbol = "[N] >>>"
 success_symbol = '[➜](bold green)'
 
-[directory.substitutions]
-'~/tests/starship-custom' = 'work-project'
-
 [git_branch]
 format =  '[$symbol$branch(:$remote_branch)]($style)'
 

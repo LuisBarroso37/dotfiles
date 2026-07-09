@@ -5,7 +5,7 @@ export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || pr
 # Pyenv
 export PYENV_ROOT="$HOME/.pyenv"
 [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init - zsh)"
+command -v pyenv &>/dev/null && eval "$(pyenv init - zsh)"
 
 # SDKMAN
 export SDKMAN_DIR="$HOME/.sdkman"
@@ -15,10 +15,10 @@ export SDKMAN_DIR="$HOME/.sdkman"
 export STM32_PRG_PATH=/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOs/bin
 
 # Angular CLI autocompletion
-source <(ng completion script)
+command -v ng &>/dev/null && source <(ng completion script)
 
 # Java
-export JAVA_HOME=$(/usr/libexec/java_home -v 25)
+export JAVA_HOME=$(/usr/libexec/java_home -v 25 2>/dev/null)
 export PATH=$JAVA_HOME/bin:$PATH
 
 # Docker
@@ -53,5 +53,5 @@ eval "$(starship init zsh)"
 eval "$(zoxide init zsh)"
 
 # Atuin shell history
-. "$HOME/.atuin/bin/env"
+[ -s "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env"
 eval "$(atuin init zsh)"
