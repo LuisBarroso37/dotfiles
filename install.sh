@@ -23,8 +23,11 @@ brew install \
   stow \
   ghostty
 
-echo "==> Stowing dotfiles"
+echo "==> Initialising submodules"
 cd "$DOTFILES"
+git submodule update --init --recursive
+
+echo "==> Stowing dotfiles"
 stow .                        # ~/.config packages (nvim, tmux, sesh, ghostty, starship, atuin)
 stow --target="$HOME" zsh     # zsh dotfiles live in ~, not ~/.config
 
