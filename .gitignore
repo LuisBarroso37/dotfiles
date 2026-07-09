@@ -7,3 +7,10 @@ nvim/.config/nvim/plugin/
 # Atuin history DB (only config, not the database)
 atuin/.config/atuin/history.db
 atuin/.config/atuin/*.db
+
+# tmux plugins managed by tpm (installed to ~/.tmux/plugins/, not needed here)
+tmux/plugins/tpm
+tmux/plugins/tmux-sensible
+tmux/plugins/tmux-yank
+tmux/plugins/tmux-resurrect
+tmux/plugins/tmux-continuum
