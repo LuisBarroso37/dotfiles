@@ -21,7 +21,8 @@ brew install \
   fd \
   ripgrep \
   carapace \
-  stow
+  stow \
+  worktrunk
 
 brew install --cask ghostty font-jetbrains-mono-nerd-font
 

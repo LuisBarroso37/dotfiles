@@ -55,3 +55,5 @@ eval "$(zoxide init zsh)"
 # Atuin shell history
 [ -s "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env"
 eval "$(atuin init zsh)"
+
+if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi
