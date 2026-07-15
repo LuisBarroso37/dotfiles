@@ -3,6 +3,15 @@
 # would read ~/Library/Application Support/lazygit on macOS).
 # Reference: https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md
 
+os:
+  # Open files from lazygit (`e`, or clicking a hyperlink) in the CURRENT window
+  # of the parent Neovim, not a new tab. Snacks sets editPreset=nvim-remote, whose
+  # default uses `--remote-tab` (new tab); we mirror it but swap in `--remote`,
+  # which does `:edit` in the current window. `--remote-send "q"` first closes the
+  # lazygit float. Falls back to a fresh nvim when run outside Neovim ($NVIM unset).
+  edit: '[ -z "$NVIM" ] && nvim -- {{filename}} || (nvim --server "$NVIM" --remote-send "q" && nvim --server "$NVIM" --remote {{filename}})'
+  editAtLine: '[ -z "$NVIM" ] && nvim +{{line}} -- {{filename}} || (nvim --server "$NVIM" --remote-send "q" && nvim --server "$NVIM" --remote {{filename}} && nvim --server "$NVIM" --remote-send ":{{line}}<CR>")'
+
 git:
   # Multiple pagers, cycled in the diff view with the `|` key (cyclePagers).
   # First entry is the default. The catppuccin theme comes from ~/.config/git/config
