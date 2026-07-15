@@ -8,11 +8,13 @@ return {
         javascriptreact = { "prettier" },
         typescriptreact = { "prettier" },
         html = { "prettier" },
+        htmlangular = { "prettier" }, -- Angular templates get their own filetype in LazyVim
         css = { "prettier" },
         scss = { "prettier" },
-        json = { "prettier" },
         yaml = { "prettier" },
         markdown = { "prettier" },
+        -- json is intentionally omitted: it's fixed via `eslint --fix` on save
+        -- (jsonc/sort-keys + json-schema validation), see config/autocmds.lua
       },
     },
   },
