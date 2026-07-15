@@ -2,6 +2,7 @@
 --ignore=README\.md
 --ignore=install\.sh
 --ignore=migrate\.sh
+--ignore=cheatsheet\.md
 --ignore=\.gitignore
 --ignore=\.stowrc
 --ignore=DS_Store
