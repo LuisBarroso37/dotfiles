@@ -9,6 +9,7 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [Neovim](https://neovim.io) + [LazyVim](https://lazyvim.org) | `.config/nvim/` | Editor |
 | [tmux](https://github.com/tmux/tmux) | `.config/tmux/tmux.conf` | Terminal multiplexer |
 | [sesh](https://github.com/joshmedeski/sesh) | `.config/sesh/sesh.toml` | tmux session manager |
+| [worktrunk](https://worktrunk.dev) | `.config/worktrunk/config.toml` | git worktree + tmux session helper (`wt`) |
 | [Ghostty](https://ghostty.org) | `.config/ghostty/` | Terminal emulator |
 | [Zsh](https://zsh.sourceforge.io) | `.zshrc`, `.zprofile`, `.zshenv` | Shell |
 | [Starship](https://starship.rs) | `.config/starship.toml` | Shell prompt |
@@ -28,8 +29,8 @@ The problem with dotfiles is that tools expect their configs at fixed paths (e.g
 The solution is [GNU Stow](https://www.gnu.org/software/stow/) — a symlink manager. Your real config files live inside `~/dotfiles/`, and Stow creates symlinks at the locations tools expect, pointing back into the repo:
 
 ```
-~/dotfiles/nvim/.config/nvim/   ──►  ~/.config/nvim/   (symlink)
-~/dotfiles/tmux/.config/tmux/   ──►  ~/.config/tmux/   (symlink)
+~/dotfiles/nvim/   ──►  ~/.config/nvim/   (symlink)
+~/dotfiles/tmux/   ──►  ~/.config/tmux/   (symlink)
 ```
 
 You edit files at the paths you already know (`~/.config/nvim/`, etc.) — they just happen to be symlinks. Git sees the real files inside `~/dotfiles/`, so you commit and push changes like any other repo. **Stow is the only required tool that isn't a terminal utility** — everything else is optional depending on what you use.

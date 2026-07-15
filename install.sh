@@ -30,14 +30,17 @@ echo "==> Initialising submodules"
 cd "$DOTFILES"
 git submodule update --init --recursive
 
-echo "==> Installing TPM"
+# Stow BEFORE cloning TPM: this makes ~/.config/tmux a symlink into the repo, so the
+# TPM clone below lands at ~/dotfiles/tmux/plugins/tpm (gitignored). Cloning first
+# would create a real ~/.config/tmux directory and make `stow .` conflict on tmux.
+echo "==> Stowing dotfiles"
+stow --restow .               # ~/.config packages (nvim, tmux, sesh, ghostty, starship, atuin, worktrunk)
+stow --restow --target="$HOME" zsh  # zsh dotfiles live in ~, not ~/.config
+
+echo "==> Installing TPM (tmux plugin manager)"
 if [ ! -d "$HOME/.config/tmux/plugins/tpm" ]; then
   git clone https://github.com/tmux-plugins/tpm "$HOME/.config/tmux/plugins/tpm"
 fi
-
-echo "==> Stowing dotfiles"
-stow .                        # ~/.config packages (nvim, tmux, sesh, ghostty, starship, atuin)
-stow --target="$HOME" zsh     # zsh dotfiles live in ~, not ~/.config
 
 echo ""
 echo "Done! Restart your terminal. In tmux run prefix+I to install plugins."
