@@ -9,8 +9,10 @@ git:
   # (delta reads it automatically); here we only vary the layout so `|` toggles
   # side-by-side <-> unified. --paging=never because lazygit does its own paging;
   # the hyperlinks make a file:line clickable to open it in your editor.
-  # --hunk-header-style drops the redundant file path (you already picked the file
-  # in lazygit) while keeping the line number + enclosing symbol as context.
+  # --hunk-header-style=omit hides the hunk header. Its "enclosing symbol" comes
+  # from git's @@ context line, which git guesses with a weak language regex (no
+  # real TypeScript driver), so it's often wrong/misleading. Line numbers already
+  # show in the gutter, so the header adds nothing.
   pagers:
-    - pager: delta --paging=never --side-by-side --hunk-header-style="line-number syntax" --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
-    - pager: delta --paging=never --hunk-header-style="line-number syntax" --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
+    - pager: delta --paging=never --side-by-side --hunk-header-style=omit --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
+    - pager: delta --paging=never --hunk-header-style=omit --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
