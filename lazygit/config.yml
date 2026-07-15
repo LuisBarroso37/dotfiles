@@ -4,9 +4,11 @@
 # Reference: https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md
 
 git:
-  paging:
-    colorArg: always
-    # delta as the diff pager. --paging=never because lazygit does its own paging.
-    # The hyperlinks options make a file:line in a diff clickable — it opens that
-    # location in your editor via lazygit's `lazygit-edit://` scheme.
-    pager: delta --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
+  # Multiple pagers, cycled in the diff view with the `|` key (cyclePagers).
+  # First entry is the default. The catppuccin theme comes from ~/.config/git/config
+  # (delta reads it automatically); here we only vary the layout so `|` toggles
+  # side-by-side <-> unified. --paging=never because lazygit does its own paging;
+  # the hyperlinks make a file:line clickable to open it in your editor.
+  pagers:
+    - pager: delta --paging=never --side-by-side --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
+    - pager: delta --paging=never --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
