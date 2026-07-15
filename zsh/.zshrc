@@ -57,3 +57,51 @@ eval "$(zoxide init zsh)"
 eval "$(atuin init zsh)"
 
 if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi
+
+# worktrunk's `sanitize` filter (used in config.toml hooks to name the tmux session)
+# replaces "/" with "-" and leaves ICP-*/poc-* branch names otherwise unchanged. Keep
+# this in sync so the session we target matches the one the hooks create/kill.
+_wt_session() { print -r -- "${1//\//-}"; }
+
+# Create (or switch to) a worktree and jump into its tmux session.
+# The [pre-start] hook in config.toml creates the detached session; this attaches to it
+# (switch-client when already inside tmux, so sessions don't nest).
+wtc() {
+  local branch="$1"
+  if [[ -z "$branch" ]]; then
+    echo "usage: wtc <branch-name>" >&2
+    return 1
+  fi
+  local session; session="$(_wt_session "$branch")"
+  if [[ -n "$TMUX" ]]; then
+    wt switch --create "$branch" -x tmux -- switch-client -t "$session"
+  else
+    wt switch --create "$branch" -x tmux -- attach -t "$session"
+  fi
+}
+
+# Remove a worktree (and, via the [pre-remove] hook, its tmux session).
+# Refuses when run from inside the very session it would kill — that would tear down
+# this shell mid-removal. Run it from another session (e.g. your main worktree) instead.
+wtr() {
+  if [[ -n "$TMUX" ]]; then
+    local cur; cur="$(tmux display-message -p '#{session_name}')"
+    local -a targets; local had_branch_arg=false a
+    for a in "$@"; do
+      [[ "$a" == -* ]] && continue          # skip flags; only branch/path args name sessions
+      had_branch_arg=true
+      targets+=("$(_wt_session "$a")")
+    done
+    if [[ "$had_branch_arg" == false ]]; then
+      # No branch given -> removes current worktree, whose session is the sanitized branch.
+      local b; b="$(git branch --show-current 2>/dev/null)"
+      [[ -n "$b" ]] && targets+=("$(_wt_session "$b")")
+    fi
+    if (( ${targets[(Ie)$cur]} )); then
+      echo "wtr: refusing — 'wt remove' would kill tmux session '$cur', the one you're in." >&2
+      echo "     Run it from another session (e.g. your main worktree)." >&2
+      return 1
+    fi
+  fi
+  wt remove "$@"
+}
