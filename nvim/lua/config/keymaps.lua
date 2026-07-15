@@ -9,3 +9,9 @@ vim.keymap.set("n", "<C-u>", "<C-u>zz")
 -- Find and center
 vim.keymap.set("n", "n", "nzzzv")
 vim.keymap.set("n", "N", "Nzzzv")
+
+-- Registers: paste/delete without clobbering the yank register
+-- Paste over a visual selection while keeping what you originally yanked
+vim.keymap.set("x", "<leader>p", [["_dP]])
+-- Delete to the black hole register (delete without saving to a register)
+vim.keymap.set({ "n", "v" }, "<leader>d", [["_d]])
