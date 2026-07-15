@@ -1,0 +1,21 @@
+# Portable git settings, tracked in dotfiles → stowed to ~/.config/git/config.
+# Machine-specific identity (user.name/email) stays in ~/.gitconfig, which is
+# untracked; git reads and merges both files.
+
+[core]
+	pager = delta
+
+[interactive]
+	diffFilter = delta --color-only
+
+[delta]
+	navigate = true        # jump between diff hunks with n / N
+	line-numbers = true
+	dark = true
+	hyperlinks = true      # clickable file:line links in supporting terminals
+
+[merge]
+	conflictstyle = zdiff3 # clearer 3-way conflict markers
+
+[diff]
+	colorMoved = default   # distinguish moved lines from add/delete

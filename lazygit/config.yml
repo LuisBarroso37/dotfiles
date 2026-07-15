@@ -1,0 +1,12 @@
+# lazygit config → stowed to ~/.config/lazygit/config.yml
+# (found there because XDG_CONFIG_HOME is set in zsh/.zshenv; without it lazygit
+# would read ~/Library/Application Support/lazygit on macOS).
+# Reference: https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md
+
+git:
+  paging:
+    colorArg: always
+    # delta as the diff pager. --paging=never because lazygit does its own paging.
+    # The hyperlinks options make a file:line in a diff clickable — it opens that
+    # location in your editor via lazygit's `lazygit-edit://` scheme.
+    pager: delta --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"

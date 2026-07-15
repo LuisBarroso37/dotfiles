@@ -22,7 +22,9 @@ brew install \
   ripgrep \
   carapace \
   stow \
-  worktrunk
+  worktrunk \
+  lazygit \
+  git-delta
 
 brew install --cask ghostty font-jetbrains-mono-nerd-font
 

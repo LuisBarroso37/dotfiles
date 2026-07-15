@@ -14,6 +14,8 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [Zsh](https://zsh.sourceforge.io) | `.zshrc`, `.zprofile`, `.zshenv` | Shell |
 | [Starship](https://starship.rs) | `.config/starship.toml` | Shell prompt |
 | [Atuin](https://atuin.sh) | `.config/atuin/config.toml` | Shell history search |
+| [lazygit](https://github.com/jesseduffield/lazygit) | `.config/lazygit/config.yml` | Terminal git UI |
+| [delta](https://github.com/dandavison/delta) | `.config/git/config` | Syntax-highlighting git diff pager |
 | [zoxide](https://github.com/ajeetdsouza/zoxide) | — | Smarter `cd` |
 | [bat](https://github.com/sharkdp/bat) | — | Better `cat` |
 | [fzf](https://github.com/junegunn/fzf) | — | Fuzzy finder |
