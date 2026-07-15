@@ -37,6 +37,9 @@ source <(carapace _carapace)
 # Sesh (tmux session manager) completion
 eval "$(sesh completion zsh)"
 
+# Pick a session with fzf and connect to it
+alias s='sesh connect $(sesh list | fzf)'
+
 # fzf
 export FZF_DEFAULT_OPTS=" \
 --color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8 \
