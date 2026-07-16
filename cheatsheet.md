@@ -59,6 +59,7 @@
 | Start a ticket (create worktree + enter its session) | `wtc ICP-1234-desc` — run from anywhere inside the repo |
 | Hop between worktrees | `Ctrl+a T` (sesh picker) → attach to its session |
 | List worktrees | `git worktree list` |
+| Rebase current branch onto latest main | `wtrebase` — fetches, rebases onto `origin/<main>` (auto-stashes), and fast-forwards the main worktree too if it's clean & on main |
 | Remove a worktree (+ session, + branch if merged) | `wtr ICP-1234-desc` — from your **main** session, not from inside it |
 | Remove the worktree you're near | `wtr` (no arg → current branch) — must be run from **another** session |
 

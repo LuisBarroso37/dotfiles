@@ -99,6 +99,50 @@ wtr() {
   echo "✓ removed worktree $dir (session '$session')"
 }
 
+# Rebase the current branch onto the latest default branch (main/master).
+# Fetches first, so you rebase onto a fresh origin/<default>; auto-stashes
+# uncommitted changes for the duration. After a successful rebase it also
+# fast-forwards the main worktree's checkout — but only when that worktree is on
+# <default> with a clean tree (it never rewrites and never touches a dirty or
+# other-branch worktree).
+wtrebase() {
+  local def
+  def="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"; def="${def#origin/}"
+  if [[ -z "$def" ]]; then
+    local b
+    for b in main master; do
+      git show-ref -q --verify "refs/remotes/origin/$b" && { def="$b"; break; }
+    done
+  fi
+  def="${def:-main}"
+  local cur; cur="$(git branch --show-current 2>/dev/null)"
+  if [[ -z "$cur" ]]; then
+    echo "wtrebase: detached HEAD or not a git repository" >&2
+    return 1
+  fi
+  echo "Fetching origin…"
+  git fetch --prune origin || return 1
+  if [[ "$cur" == "$def" ]]; then
+    echo "On $def — fast-forwarding to origin/$def."
+    git merge --ff-only "origin/$def"
+    return
+  fi
+  echo "Rebasing $cur onto origin/$def…"
+  git rebase --autostash "origin/$def" || return 1
+  # Also bring the main worktree's <default> checkout up to date, when it's safe.
+  local main_wt; main_wt="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; main_wt="${main_wt%/.git}"
+  local main_branch; main_branch="$(git -C "$main_wt" branch --show-current 2>/dev/null)"
+  if [[ "$main_branch" != "$def" ]]; then
+    echo "Note: main worktree is on '$main_branch', not '$def' — left it untouched."
+  elif [[ -n "$(git -C "$main_wt" status --porcelain)" ]]; then
+    echo "Note: main worktree has local changes — left '$def' untouched."
+  else
+    git -C "$main_wt" merge --ff-only "origin/$def" >/dev/null 2>&1 \
+      && echo "Also fast-forwarded '$def' in $main_wt." \
+      || echo "Note: '$def' in $main_wt could not fast-forward (diverged) — left untouched."
+  fi
+}
+
 # Machine/work-specific settings (Node/NVM, Angular CLI, and language SDKs like
 # pyenv, SDKMAN, Java, Go, Docker, Rust, …) live in an untracked ~/.zshrc.local,
 # so this tracked config stays portable and a fresh machine starts clean. Sourced
