@@ -38,6 +38,36 @@
 
 ---
 
+## Git worktrees (git + tmux + sesh)
+
+> Worktrees are **sibling directories** named `<repo>.<branch>` (e.g.
+> `portal.ICP-1234-desc` next to `portal`); each gets a tmux session named
+> `<repo>-<branch>` (e.g. `portal-ICP-1234-desc` — hyphens, since `.` breaks tmux
+> `-t` targets). Managed by the `wtc` / `wtr` zsh functions over plain `git worktree`.
+> `sesh` (`Ctrl+a T`) is the picker for hopping between them.
+
+### Mental model
+
+- The main clone (`portal`, `intocare`) is **itself a worktree**, pinned to a branch — keep it on `main` so new worktrees branch off the right base.
+- A branch can be checked out in **only one worktree at a time**.
+- `git worktree` **never changes your shell's cwd**, and `wtr` **refuses to delete the session you're in** — so the old drift/self-kill surprises can't happen.
+
+### Workflow
+
+| Action | Command |
+|--------|---------|
+| Start a ticket (create worktree + enter its session) | `wtc ICP-1234-desc` — run from anywhere inside the repo |
+| Hop between worktrees | `Ctrl+a T` (sesh picker) → attach to its session |
+| List worktrees | `git worktree list` |
+| Remove a worktree (+ session, + branch if merged) | `wtr ICP-1234-desc` — from your **main** session, not from inside it |
+| Remove the worktree you're near | `wtr` (no arg → current branch) — must be run from **another** session |
+
+- ✅ `wtc` drops you straight into the new worktree's session (switches client if already in tmux, attaches if not).
+- ✅ `wtr` from your base (`main`) session; it kills the session and deletes the branch **only if merged** (unmerged branches are kept).
+- ❌ `wtr` while standing inside the worktree/session you're deleting — it refuses.
+
+---
+
 ## LazyVim / Neovim
 
 > `<leader>` is `Space` in LazyVim.

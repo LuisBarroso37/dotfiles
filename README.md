@@ -9,7 +9,6 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [Neovim](https://neovim.io) + [LazyVim](https://lazyvim.org) | `.config/nvim/` | Editor |
 | [tmux](https://github.com/tmux/tmux) | `.config/tmux/tmux.conf` | Terminal multiplexer |
 | [sesh](https://github.com/joshmedeski/sesh) | `.config/sesh/sesh.toml` | tmux session manager |
-| [worktrunk](https://worktrunk.dev) | `.config/worktrunk/config.toml` | git worktree + tmux session helper (`wt`) |
 | [Ghostty](https://ghostty.org) | `.config/ghostty/` | Terminal emulator |
 | [Zsh](https://zsh.sourceforge.io) | `.zshrc`, `.zprofile`, `.zshenv` | Shell |
 | [Starship](https://starship.rs) | `.config/starship.toml` | Shell prompt |

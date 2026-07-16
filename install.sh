@@ -22,7 +22,6 @@ brew install \
   ripgrep \
   carapace \
   stow \
-  worktrunk \
   lazygit \
   git-delta
 
@@ -36,7 +35,7 @@ git submodule update --init --recursive
 # TPM clone below lands at ~/dotfiles/tmux/plugins/tpm (gitignored). Cloning first
 # would create a real ~/.config/tmux directory and make `stow .` conflict on tmux.
 echo "==> Stowing dotfiles"
-stow --restow .               # ~/.config packages (nvim, tmux, sesh, ghostty, starship, atuin, worktrunk)
+stow --restow .               # ~/.config packages (nvim, tmux, sesh, ghostty, starship, atuin)
 stow --restow --target="$HOME" zsh  # zsh dotfiles live in ~, not ~/.config
 
 echo "==> Installing TPM (tmux plugin manager)"
