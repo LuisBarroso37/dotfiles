@@ -67,6 +67,18 @@
 - ✅ `wtr` from your base (`main`) session; it kills the session and deletes the branch **only if merged** (unmerged branches are kept).
 - ❌ `wtr` while standing inside the worktree/session you're deleting — it refuses.
 
+### Daily workflow (from opening Ghostty)
+
+> **Mental model:** `sesh` / `Ctrl+a T` = pick a main clone + hop between anything · `wtc` = start/enter a ticket worktree · `wtr` = tear one down · `wtrebase` = stay on top of main. Sessions don't auto-restore (see note below) — you rebuild them deterministically with these commands.
+
+1. **Open Ghostty** → plain shell, no tmux yet. Jump into a project with **`Ctrl+a T`** → pick `portal` / `intocare` / `dotfiles` (or `sesh connect portal`). This starts tmux fresh and drops you in that repo's main-clone session. Keep main clones on `main`.
+2. **Start a ticket** — from anywhere inside the repo: `wtc ICP-1234-desc`. Creates (or reuses) the worktree and drops you into its `<repo>-ICP-1234-desc` session.
+3. **Hop around** — `Ctrl+a T` anytime to switch sessions; `Ctrl+a d` to detach (session keeps running).
+4. **Stay current** — from inside a ticket session: `wtrebase` (rebase onto `origin/main`, auto-stash, fast-forward main clone too).
+5. **Finish a ticket** — once merged, from a **different** session (e.g. your main clone, not from inside the worktree): `wtr ICP-1234-desc`. Removes worktree + session, deletes the branch only if merged.
+
+> **Session resurrection is off.** `tmux-continuum` still auto-saves every 15 min, but nothing reopens on server start — rebuild with `sesh`/`wtc` instead. Want a specific layout back? Save with `Ctrl+a Ctrl+s`, restore manually with `Ctrl+a Ctrl+r`.
+
 ---
 
 ## LazyVim / Neovim
