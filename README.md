@@ -90,6 +90,14 @@ stow .                     # all ~/.config packages
 stow --target="$HOME" zsh  # zsh dotfiles → ~
 ```
 
+**Machine-specific shell config** — anything you *don't* want on every machine (language toolchains like Node/NVM, the Angular CLI, Java, Python/pyenv, Go, SDKMAN, Rust) lives in `~/.zshrc.local`, which the tracked `.zshrc` sources at the very end if it exists:
+
+```sh
+[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"
+```
+
+`~/.zshrc.local` is **not** tracked by this repo — it sits in `~`, outside `~/dotfiles/`, so git never sees it. That keeps the committed config portable: a fresh machine gets only the cross-machine tooling and starts clean. Recreate `~/.zshrc.local` per machine with just the toolchains that machine actually needs (it's sourced last, so tools like SDKMAN that must initialise at the end of `.zshrc` still work).
+
 To add a new tool to the repo:
 
 1. Create its folder: `mkdir ~/dotfiles/<tool>/`

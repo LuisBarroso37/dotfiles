@@ -1,38 +1,8 @@
-# NVM
-# nvm is installed at ~/.nvm here. Don't use the XDG-conditional NVM_DIR snippet:
-# once .zshenv exports XDG_CONFIG_HOME it resolves to ~/.config/nvm (which doesn't
-# exist), so nvm.sh never loads and node/npm vanish from PATH.
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-
-# Pyenv
-export PYENV_ROOT="$HOME/.pyenv"
-[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
-command -v pyenv &>/dev/null && eval "$(pyenv init - zsh)"
-
-# SDKMAN
-export SDKMAN_DIR="$HOME/.sdkman"
-[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
-
-# STM32
-export STM32_PRG_PATH=/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOs/bin
-
-# Angular CLI autocompletion
-command -v ng &>/dev/null && source <(ng completion script)
-
-# Java
-export JAVA_HOME=$(/usr/libexec/java_home -v 25 2>/dev/null)
-export PATH=$JAVA_HOME/bin:$PATH
-
-# Docker
-export DOCKER_HOST=unix://$HOME/.docker/run/docker.sock
-
 # PATH
 export PATH="$HOME/.local/bin:$PATH"
-export PATH="$HOME/go/bin:$PATH"
 
 # Carapace completions
-autoload -U compinit && compinit
+autoload -Uz compinit && compinit
 export CARAPACE_BRIDGES='zsh,fish,bash,inshellisense'
 zstyle ':completion:*' format $'\e[2;37mCompleting %d\e[m'
 command -v carapace &>/dev/null && source <(carapace _carapace)
@@ -111,3 +81,9 @@ wtr() {
   fi
   wt remove "$@"
 }
+
+# Machine/work-specific settings (Node/NVM, Angular CLI, and language SDKs like
+# pyenv, SDKMAN, Java, Go, Docker, Rust, …) live in an untracked ~/.zshrc.local,
+# so this tracked config stays portable and a fresh machine starts clean. Sourced
+# LAST so tools such as SDKMAN that must initialise at the end of .zshrc still do.
+[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"
