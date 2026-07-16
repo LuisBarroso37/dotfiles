@@ -1,5 +1,8 @@
 # NVM
-export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
+# nvm is installed at ~/.nvm here. Don't use the XDG-conditional NVM_DIR snippet:
+# once .zshenv exports XDG_CONFIG_HOME it resolves to ~/.config/nvm (which doesn't
+# exist), so nvm.sh never loads and node/npm vanish from PATH.
+export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
 # Pyenv
