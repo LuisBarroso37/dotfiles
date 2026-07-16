@@ -35,10 +35,10 @@ export PATH="$HOME/go/bin:$PATH"
 autoload -U compinit && compinit
 export CARAPACE_BRIDGES='zsh,fish,bash,inshellisense'
 zstyle ':completion:*' format $'\e[2;37mCompleting %d\e[m'
-source <(carapace _carapace)
+command -v carapace &>/dev/null && source <(carapace _carapace)
 
 # Sesh (tmux session manager) completion
-eval "$(sesh completion zsh)"
+command -v sesh &>/dev/null && eval "$(sesh completion zsh)"
 
 # Pick a session with fzf and connect to it
 alias s='sesh connect $(sesh list | fzf)'
@@ -50,17 +50,17 @@ export FZF_DEFAULT_OPTS=" \
 --color=marker:#b4befe,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8 \
 --color=selected-bg:#45475a \
 --multi"
-source <(fzf --zsh)
+command -v fzf &>/dev/null && source <(fzf --zsh)
 
 # Starship prompt
-eval "$(starship init zsh)"
+command -v starship &>/dev/null && eval "$(starship init zsh)"
 
 # Zoxide (smart cd)
-eval "$(zoxide init zsh)"
+command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 
 # Atuin shell history
 [ -s "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env"
-eval "$(atuin init zsh)"
+command -v atuin &>/dev/null && eval "$(atuin init zsh)"
 
 if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi
 
