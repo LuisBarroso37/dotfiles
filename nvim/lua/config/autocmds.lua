@@ -8,69 +8,30 @@
 -- e.g. vim.api.nvim_del_augroup_by_name("lazyvim_wrap_spell")
 
 -- ---------------------------------------------------------------------------
--- Format on save
+-- ESLint --fix for JSON on save
 --
--- LazyVim's built-in format-on-save doesn't reliably drive conform for markup
--- filetypes in this setup, and Angular templates use the `htmlangular` filetype
--- which the default `html` mapping misses. These autocmds handle it explicitly.
+-- Formatting is prettier's job (conform, see plugins/formatting.lua) and linting
+-- is the eslint LSP's job (see plugins/eslint.lua). But the eslint LSP's filetypes
+-- (upstream lspconfig) do NOT include `json`/`jsonc`, so it never attaches to JSON
+-- buffers and LazyVim's fixAll-on-save never runs for them. This autocmd is the
+-- only thing that applies eslint's auto-fixable JSON rules on save — notably
+-- `jsonc/sort-keys` on **/{nl,fr}.json. Non-fixable violations (e.g. an invalid
+-- schema property) are left untouched here and surfaced by :lint.
 --
--- Both self-gate on the relevant tool config existing, so they're no-ops in
--- projects that don't use prettier/eslint (e.g. non-JS projects). JS/TS are left
--- to the eslint LSP (config/../plugins/eslint.lua) and deliberately not touched
--- here, to avoid double-formatting.
---
--- JSON is handled by BOTH passes, in order: prettier (indentation/whitespace)
--- then eslint --fix (jsonc/sort-keys, schema). The two are orthogonal — prettier
--- never reorders keys and eslint never touches whitespace — so they compose.
--- Ordering is guaranteed because same-group BufWritePre autocmds run in the order
--- they are registered, and the prettier autocmd below is registered first.
--- ---------------------------------------------------------------------------
-
-local format_group = vim.api.nvim_create_augroup("user_format_on_save", { clear = true })
-
-local PRETTIER_CONFIGS = {
-  ".prettierrc",
-  ".prettierrc.json",
-  ".prettierrc.js",
-  ".prettierrc.cjs",
-  ".prettierrc.mjs",
-  ".prettierrc.yaml",
-  ".prettierrc.yml",
-  ".prettierrc.toml",
-  "prettier.config.js",
-  "prettier.config.cjs",
-  "prettier.config.mjs",
-}
-
--- Pass 1 — Prettier for markup/style/data files (js/ts are handled by the eslint LSP).
-vim.api.nvim_create_autocmd("BufWritePre", {
-  group = format_group,
-  pattern = { "*.html", "*.css", "*.scss", "*.yaml", "*.yml", "*.md", "*.json", "*.jsonc" },
-  callback = function(args)
-    local fname = vim.api.nvim_buf_get_name(args.buf)
-    if fname == "" or not vim.fs.root(fname, PRETTIER_CONFIGS) then
-      return
-    end
-    pcall(function()
-      require("conform").format({
-        bufnr = args.buf,
-        formatters = { "prettier" },
-        async = false,
-        timeout_ms = 3000,
-      })
-    end)
-  end,
-})
-
--- Pass 2 — ESLint --fix for JSON. Runs EVERY auto-fixable rule the flat config maps
--- to the file (not just sort-keys); non-fixable violations (e.g. an invalid schema
--- property) are reported by :lint but left untouched here.
+-- It composes with conform's prettier pass regardless of order: prettier only
+-- touches whitespace and sort-keys only reorders keys, so the two are orthogonal
+-- and idempotent — the saved result is the same whichever runs first.
 --
 -- We feed the buffer to ESLint over stdin with --stdin-filename set to the real
 -- path, because ESLint 9 flat config matches rules by file path (e.g. sort-keys
 -- only applies to **/{nl,fr}.json), so a temp file elsewhere would match nothing.
 -- --fix-dry-run + --format json returns the fixed source in the `output` field.
 -- ESLint 9 needs its CWD to be the directory containing eslint.config.*.
+-- Self-gates on a local eslint install + config, so it's a no-op elsewhere.
+-- ---------------------------------------------------------------------------
+
+local format_group = vim.api.nvim_create_augroup("user_format_on_save", { clear = true })
+
 vim.api.nvim_create_autocmd("BufWritePre", {
   group = format_group,
   pattern = { "*.json", "*.jsonc" },
