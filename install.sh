@@ -23,6 +23,7 @@ brew install \
   carapace \
   stow \
   lazygit \
+  gh \
   git-delta
 
 brew install --cask ghostty font-jetbrains-mono-nerd-font
