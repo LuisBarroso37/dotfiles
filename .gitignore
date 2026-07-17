@@ -1,7 +1,9 @@
 .DS_Store
 
-# Neovim state (not config). Paths are relative to the flat package layout:
-# nvim/ is stowed to ~/.config/nvim, so runtime state lands under nvim/.
+# Neovim: guard against anything a plugin might generate inside the *config* dir
+# at runtime. LazyVim keeps real state in ~/.local/share, ~/.local/state and
+# ~/.cache/nvim (outside this repo), so these are just belt-and-suspenders for
+# plugins that occasionally drop generated files next to the config.
 nvim/.cache/
 nvim/plugin/
 nvim/data/

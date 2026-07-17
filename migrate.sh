@@ -25,6 +25,8 @@ move_config "$HOME/.config/tmux"              "$DOTFILES/tmux"
 move_config "$HOME/.config/sesh"              "$DOTFILES/sesh"
 move_config "$HOME/.config/ghostty"           "$DOTFILES/ghostty"
 move_config "$HOME/.config/starship.toml"     "$DOTFILES/starship.toml"
+move_config "$HOME/.config/git"               "$DOTFILES/git"
+move_config "$HOME/.config/lazygit"           "$DOTFILES/lazygit"
 
 # atuin config.toml only (keep the rest of ~/.config/atuin/ intact)
 if [ -f "$HOME/.config/atuin/config.toml" ] && [ ! -L "$HOME/.config/atuin/config.toml" ]; then

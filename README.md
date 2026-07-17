@@ -15,11 +15,13 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [Atuin](https://atuin.sh) | `.config/atuin/config.toml` | Shell history search |
 | [lazygit](https://github.com/jesseduffield/lazygit) | `.config/lazygit/config.yml` | Terminal git UI |
 | [delta](https://github.com/dandavison/delta) | `.config/git/config` | Syntax-highlighting git diff pager |
+| [gh](https://cli.github.com) | — | GitHub CLI (used by `wtr` to detect merged PRs) |
 | [zoxide](https://github.com/ajeetdsouza/zoxide) | — | Smarter `cd` |
 | [bat](https://github.com/sharkdp/bat) | — | Better `cat` |
 | [fzf](https://github.com/junegunn/fzf) | — | Fuzzy finder |
 | [fd](https://github.com/sharkdp/fd) | — | Better `find` |
 | [ripgrep](https://github.com/BurntSushi/ripgrep) | — | Better `grep` |
+| [carapace](https://carapace.sh) | — | Multi-shell completion engine |
 
 ---
 
