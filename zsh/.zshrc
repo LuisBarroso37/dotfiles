@@ -10,8 +10,15 @@ command -v carapace &>/dev/null && source <(carapace _carapace)
 # Sesh (tmux session manager) completion
 command -v sesh &>/dev/null && eval "$(sesh completion zsh)"
 
-# Pick a session with fzf and connect to it
-alias s='sesh connect $(sesh list | fzf)'
+# Pick a session and connect to it — the shell-side twin of the tmux `T` binding
+# (Ctrl+a T). Uses plain fzf (not fzf-tmux) so it also works before tmux starts.
+s() {
+  sesh connect "$(
+    sesh list --icons | fzf \
+      --no-sort --ansi --prompt '⚡  ' \
+      --preview 'sesh preview {}' --preview-window 'right:55%'
+  )"
+}
 
 # fzf
 export FZF_DEFAULT_OPTS=" \
