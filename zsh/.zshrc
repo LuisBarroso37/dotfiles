@@ -94,7 +94,21 @@ wtr() {
     return 1
   fi
   git worktree remove "$dir" || return 1
-  git branch -d "$branch" 2>/dev/null         # deletes only if merged; keeps unmerged
+  # Delete the branch, being clever about *how* it was merged:
+  #   • plain merge → it's an ancestor of main, so `git branch -d` succeeds.
+  #   • squash/rebase merge (our repo's style) → the tip is NOT an ancestor, so
+  #     `-d` fails. Ask GitHub if the PR merged; if so, force-delete (`-D`).
+  #   • no merged PR → keep the branch (unmerged work is never force-deleted).
+  if git branch -d "$branch" 2>/dev/null; then
+    echo "✓ deleted branch '$branch' (merged into local base)"
+  elif command -v gh >/dev/null 2>&1 \
+    && gh pr list --head "$branch" --state merged --limit 1 --json number \
+         --jq '.[0].number' 2>/dev/null | grep -q .; then
+    git branch -D "$branch"
+    echo "✓ force-deleted branch '$branch' (PR was squash/rebase-merged on GitHub)"
+  else
+    echo "• kept branch '$branch' (not merged anywhere — nothing lost)"
+  fi
   tmux kill-session -t "=$session" 2>/dev/null
   echo "✓ removed worktree $dir (session '$session')"
 }

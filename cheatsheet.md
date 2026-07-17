@@ -64,7 +64,7 @@
 | Remove the worktree you're near | `wtr` (no arg → current branch) — must be run from **another** session |
 
 - ✅ `wtc` drops you straight into the new worktree's session (switches client if already in tmux, attaches if not).
-- ✅ `wtr` from your base (`main`) session; it kills the session and deletes the branch **only if merged** (unmerged branches are kept).
+- ✅ `wtr` from your base (`main`) session; it kills the session and deletes the branch when it's merged. It tries a safe local delete first (`git branch -d`), and if that fails it asks GitHub whether the PR was **squash/rebase-merged** and force-deletes only then (`gh` required). Truly unmerged branches are always kept.
 - ❌ `wtr` while standing inside the worktree/session you're deleting — it refuses.
 
 ### Daily workflow (from opening Ghostty)
