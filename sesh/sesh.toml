@@ -1,13 +1,13 @@
 blacklist = ["scratch"]
 
+# Machine-specific sessions (work projects, client paths — anything that only
+# exists on one machine) live in an untracked ~/.config/sesh.local.toml, the same
+# portability split as ~/.zshrc.local. Keeps this tracked config free of paths a
+# fresh/personal machine wouldn't have.
+# NOTE: sesh ERRORS on a missing import, so install.sh creates this file (empty is
+# fine) on every machine — don't remove that step.
+import = ["~/.config/sesh.local.toml"]
+
 [[session]]
 name = "dotfiles"
 path = "~/dotfiles"
-
-[[session]]
-name = "portal"
-path = "~/Desktop/into.care/portal"
-
-[[session]]
-name = "intocare"
-path = "~/Desktop/into.care/intocare"

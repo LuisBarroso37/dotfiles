@@ -44,6 +44,12 @@ if [ ! -d "$HOME/.config/tmux/plugins/tpm" ]; then
   git clone https://github.com/tmux-plugins/tpm "$HOME/.config/tmux/plugins/tpm"
 fi
 
+# sesh/sesh.toml imports a machine-specific session file; sesh errors if the
+# import target is missing, so guarantee it exists (empty is fine). Put work/
+# client project sessions here — it stays untracked, outside the dotfiles repo.
+echo "==> Ensuring machine-specific sesh session file exists"
+[ -f "$HOME/.config/sesh.local.toml" ] || touch "$HOME/.config/sesh.local.toml"
+
 echo ""
 echo "Done! Restart your terminal. In tmux run prefix+I to install plugins."
 # gh needs a one-time interactive login before wtr's PR-merge cleanup works:
