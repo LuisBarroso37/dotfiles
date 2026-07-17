@@ -27,6 +27,14 @@ export FZF_DEFAULT_OPTS=" \
 --color=marker:#b4befe,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8 \
 --color=selected-bg:#45475a \
 --multi"
+# Use fd for fzf's scans so it respects .gitignore and includes hidden files —
+# bare `fzf` and Ctrl-T otherwise fall back to `find` (no gitignore, no hidden).
+# Ctrl-T = files, Alt-C = cd into dir. Guarded so a machine without fd still works.
+if command -v fd &>/dev/null; then
+  export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+  export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+  export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+fi
 command -v fzf &>/dev/null && source <(fzf --zsh)
 
 # Starship prompt
