@@ -46,3 +46,6 @@ fi
 
 echo ""
 echo "Done! Restart your terminal. In tmux run prefix+I to install plugins."
+# gh needs a one-time interactive login before wtr's PR-merge cleanup works:
+#   gh auth login
+echo "Next: run 'gh auth login' so wtr can detect merged PRs."
