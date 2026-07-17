@@ -1,6 +1,5 @@
 theme = Catppuccin Mocha
 font-family = "JetBrainsMono Nerd Font"
-background-blur-radius = 20
 mouse-hide-while-typing = true
 window-decoration = true
 macos-option-as-alt = true
