@@ -11,9 +11,11 @@ local PRETTIER_CONFIGS = {
   ".prettierrc.yaml",
   ".prettierrc.yml",
   ".prettierrc.toml",
+  ".prettierrc.ts",
   "prettier.config.js",
   "prettier.config.cjs",
   "prettier.config.mjs",
+  "prettier.config.ts",
 }
 
 return {
