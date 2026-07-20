@@ -46,5 +46,41 @@ return {
         end,
       },
     },
+    setup = {
+      -- Fix LazyVim's ESLint formatter so it actually runs the ESLint LSP on save.
+      --
+      -- LazyVim's eslint extra registers an "eslint: lsp" formatter whose format fn
+      -- calls conform WITHOUT setting `lsp_format`, so it inherits the default
+      -- "fallback" — which only uses the LSP when NO CLI formatter exists. Because
+      -- prettier is configured for TS (plugins/formatting.lua), conform always runs
+      -- prettier and never the ESLint LSP, so eslint --fix (sort-imports, import/order)
+      -- never applies. The registered formatter is silently just a second prettier pass.
+      --
+      -- We re-register the same formatter but force an ESLint-LSP-only conform pass:
+      -- no CLI formatters, prefer the LSP, restricted to the eslint client. This runs
+      -- eslint --fix as part of LazyVim's format-on-save — respecting the <leader>uf
+      -- toggle and needing no manual BufWritePre autocmd.
+      eslint = function()
+        if vim.g.lazyvim_eslint_auto_format == false then
+          return
+        end
+        local formatter = LazyVim.lsp.formatter({
+          name = "eslint: lsp",
+          primary = false,
+          priority = 200,
+          filter = "eslint",
+        })
+        formatter.format = function(buf)
+          require("conform").format({
+            bufnr = buf,
+            formatters = {}, -- no CLI formatters; eslint LSP only
+            lsp_format = "prefer", -- run the LSP even though prettier exists
+            name = "eslint", -- restrict LSP formatting to the eslint client
+            timeout_ms = 3000,
+          })
+        end
+        LazyVim.format.register(formatter)
+      end,
+    },
   },
 }
