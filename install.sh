@@ -25,7 +25,8 @@ brew install \
   lazygit \
   gh \
   git-delta \
-  yazi
+  yazi \
+  mise
 
 # Yazi optional dependencies — install per machine in install.local.sh:
 #   brew install ffmpegthumbnailer ffmpeg sevenzip jq poppler imagemagick

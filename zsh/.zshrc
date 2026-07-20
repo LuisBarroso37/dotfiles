@@ -47,6 +47,13 @@ command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 [ -s "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env"
 command -v atuin &>/dev/null && eval "$(atuin init zsh)"
 
+# mise — unified runtime/version manager (node, java, python, …). Activating it
+# is tracked & portable; the *languages* are chosen per machine and live in the
+# untracked ~/.config/mise/config.toml (write it with e.g. `mise use -g node@lts
+# java@corretto-25`). A fresh clone therefore starts language-free. Guarded so a
+# machine without mise is a no-op.
+command -v mise &>/dev/null && eval "$(mise activate zsh)"
+
 # --- Git worktrees + tmux --------------------------------------------------
 # Worktrees are sibling dirs named <repo>.<branch> (e.g. portal.ICP-1234-desc
 # next to portal); each gets a tmux session named <repo>-<branch> (hyphens, since
@@ -182,8 +189,10 @@ function y() {
 	rm -f -- "$tmp"
 }
 
-# Machine/work-specific settings (Node/NVM, Angular CLI, and language SDKs like
-# pyenv, SDKMAN, Java, Go, Docker, Rust, …) live in an untracked ~/.zshrc.local,
-# so this tracked config stays portable and a fresh machine starts clean. Sourced
-# LAST so tools such as SDKMAN that must initialise at the end of .zshrc still do.
+# Machine/work-specific settings (Angular CLI completion, Docker host, STM32,
+# and any toolchains not yet under mise like Go/Rust) live in an untracked
+# ~/.zshrc.local, so this tracked config stays portable and a fresh machine
+# starts clean. Language runtimes are handled by mise (activated above); pick
+# versions per machine with `mise use -g`. Sourced LAST so anything here can
+# still override earlier setup.
 [ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"
