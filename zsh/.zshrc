@@ -139,6 +139,10 @@ wtr() {
   fi
   tmux kill-session -t "=$session" 2>/dev/null
   echo "✓ removed worktree $dir (session '$session')"
+  # Destroying a session from inside an attached client leaves tmux waiting for
+  # the next input event before it repaints — so the output above (and the
+  # returned prompt) wouldn't show until you pressed a key. Force the redraw.
+  [[ -n "$TMUX" ]] && tmux refresh-client 2>/dev/null || true
 }
 
 # Rebase the current branch onto the latest default branch (main/master).
