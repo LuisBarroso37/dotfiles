@@ -181,6 +181,8 @@ Or delete all at once after `*`:
 | Paste over selection, keep your yank | `<leader>p` (visual) |
 | Delete without saving to a register (black hole) | `<leader>d` |
 | Explicit black-hole delete | `"_d` (e.g. `"_dd`) |
+| Yank current file's relative path to clipboard | `<leader>yp` |
+| Yank current file's absolute path to clipboard | `<leader>yP` |
 
 ### LSP
 
