@@ -19,3 +19,10 @@ tmux/plugins/tmux-sensible
 tmux/plugins/tmux-yank
 tmux/plugins/tmux-resurrect
 tmux/plugins/tmux-continuum
+
+# Yazi flavors are vendored (committed) so the repo is self-contained — no
+# `ya pkg install` needed at bootstrap. Only skip the non-functional extras:
+# the preview screenshot and the upstream readme. flavor.toml + tmtheme.xml +
+# licenses stay tracked. Run `ya pkg upgrade` to refresh a flavor.
+yazi/flavors/*/preview.png
+yazi/flavors/*/README.md

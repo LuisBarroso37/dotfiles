@@ -172,6 +172,16 @@ wtrebase() {
   fi
 }
 
+# Yazi — cd into last directory on exit
+function y() {
+	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+	yazi "$@" --cwd-file="$tmp"
+	if cwd="$(command cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
+		builtin cd -- "$cwd"
+	fi
+	rm -f -- "$tmp"
+}
+
 # Machine/work-specific settings (Node/NVM, Angular CLI, and language SDKs like
 # pyenv, SDKMAN, Java, Go, Docker, Rust, …) live in an untracked ~/.zshrc.local,
 # so this tracked config stays portable and a fresh machine starts clean. Sourced

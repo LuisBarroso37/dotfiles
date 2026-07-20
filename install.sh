@@ -24,7 +24,16 @@ brew install \
   stow \
   lazygit \
   gh \
-  git-delta
+  git-delta \
+  yazi
+
+# Yazi optional dependencies — install per machine in install.local.sh:
+#   brew install ffmpegthumbnailer ffmpeg sevenzip jq poppler imagemagick
+#   ffmpegthumbnailer + ffmpeg  → video thumbnails/preview
+#   sevenzip                    → archive previews
+#   jq                          → JSON preview formatting
+#   poppler                     → PDF preview
+#   imagemagick                 → AVIF/HEIC/JXL image support
 
 brew install --cask ghostty font-jetbrains-mono-nerd-font
 
