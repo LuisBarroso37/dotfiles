@@ -1,5 +1,9 @@
 .DS_Store
 
+# Optional per-machine install steps, sourced by install.sh / install.linux.sh
+# if present (extra packages, yazi's preview deps). Stays untracked & portable.
+install.local.sh
+
 # Neovim: guard against anything a plugin might generate inside the *config* dir
 # at runtime. LazyVim keeps real state in ~/.local/share, ~/.local/state and
 # ~/.cache/nvim (outside this repo), so these are just belt-and-suspenders for

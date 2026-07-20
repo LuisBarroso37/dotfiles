@@ -183,6 +183,19 @@ echo "     && curl -fLO https://github.com/ryanoasis/nerd-fonts/releases/latest/
 echo "     && unzip -o JetBrainsMono.zip && rm JetBrainsMono.zip && fc-cache -f"
 
 # ---------------------------------------------------------------------------
+# 6b. Optional per-machine install steps
+# ---------------------------------------------------------------------------
+# An untracked install.local.sh next to this script (gitignored + stowignored) is
+# sourced here if present — extra packages, yazi's preview deps, etc. — so this
+# tracked script stays portable.
+if [ -f "$DOTFILES/install.local.sh" ]; then
+  echo ""
+  echo "==> Running install.local.sh (machine-specific)"
+  # shellcheck source=/dev/null
+  source "$DOTFILES/install.local.sh"
+fi
+
+# ---------------------------------------------------------------------------
 # 7. Shared tail — identical to install.sh
 # ---------------------------------------------------------------------------
 echo ""

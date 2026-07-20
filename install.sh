@@ -3,6 +3,13 @@ set -e
 
 DOTFILES="$HOME/dotfiles"
 
+# This script is macOS/Homebrew-only. On Linux, hand off to the native-package-
+# manager bootstrap so nobody accidentally installs Homebrew-on-Linux.
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "install.sh is for macOS. On Linux, run ./install.linux.sh instead." >&2
+  exit 1
+fi
+
 echo "==> Installing Homebrew (if missing)"
 if ! command -v brew &>/dev/null; then
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -28,7 +35,8 @@ brew install \
   yazi \
   mise
 
-# Yazi optional dependencies — install per machine in install.local.sh:
+# Yazi optional dependencies — install per machine in install.local.sh (see the
+# sourced hook below), e.g.:
 #   brew install ffmpegthumbnailer ffmpeg sevenzip jq poppler imagemagick
 #   ffmpegthumbnailer + ffmpeg  → video thumbnails/preview
 #   sevenzip                    → archive previews
@@ -37,6 +45,15 @@ brew install \
 #   imagemagick                 → AVIF/HEIC/JXL image support
 
 brew install --cask ghostty font-jetbrains-mono-nerd-font
+
+# Optional per-machine install steps (extra packages, yazi's preview deps, etc.)
+# live in an untracked install.local.sh next to this script — sourced here if it
+# exists, so this tracked script stays portable. It's gitignored + stowignored.
+if [ -f "$DOTFILES/install.local.sh" ]; then
+  echo "==> Running install.local.sh (machine-specific)"
+  # shellcheck source=/dev/null
+  source "$DOTFILES/install.local.sh"
+fi
 
 echo "==> Initialising submodules"
 cd "$DOTFILES"
