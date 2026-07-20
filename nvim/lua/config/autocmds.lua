@@ -56,12 +56,15 @@ vim.api.nvim_create_autocmd("BufWritePre", {
     end
 
     local input = table.concat(vim.api.nvim_buf_get_lines(args.buf, 0, -1, false), "\n")
+    -- Bounded wait: eslint is spawned synchronously on the write, so a slow/hung
+    -- run would freeze the save (and the editor). On timeout :wait kills the
+    -- process and returns a non-zero result, which the stdout guard below skips.
     local result = vim
       .system(
         { eslint, "--stdin", "--stdin-filename", fname, "--fix-dry-run", "--format", "json" },
         { cwd = config_dir, stdin = input }
       )
-      :wait()
+      :wait(3000)
 
     if not result.stdout or result.stdout == "" then
       return
