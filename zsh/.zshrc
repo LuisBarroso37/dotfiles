@@ -54,6 +54,12 @@ command -v atuin &>/dev/null && eval "$(atuin init zsh)"
 # machine without mise is a no-op.
 command -v mise &>/dev/null && eval "$(mise activate zsh)"
 
+# Language-tool bin dirs (portable, guarded no-ops when absent). The toolchains
+# come from mise (go) and rustup (rust); these just expose the CLIs those tools
+# install: `go install` → ~/go/bin, `cargo install` → ~/.cargo/bin.
+[ -d "$HOME/go/bin" ] && export PATH="$HOME/go/bin:$PATH"
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
 # --- Git worktrees + tmux --------------------------------------------------
 # Worktrees are sibling dirs named <repo>.<branch> (e.g. portal.ICP-1234-desc
 # next to portal); each gets a tmux session named <repo>-<branch> (hyphens, since
