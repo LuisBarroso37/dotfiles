@@ -1,6 +1,7 @@
 --target=~/.config
 --ignore=README\.md
 --ignore=install\.sh
+--ignore=install\.linux\.sh
 --ignore=migrate\.sh
 --ignore=cheatsheet\.md
 --ignore=\.gitignore
