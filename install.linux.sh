@@ -113,7 +113,43 @@ echo "   Pick language runtimes per machine, e.g.:"
 echo "     mise use -g node@lts java@corretto-25 go@latest"
 
 # ---------------------------------------------------------------------------
-# 5. Report what native repos couldn't provide, with fallback recipes
+# 5. ghostty — official on some PMs, community/snap on others
+# ---------------------------------------------------------------------------
+# (https://ghostty.org/docs/install/binary#linux)
+echo "==> Installing ghostty"
+if ! command -v ghostty >/dev/null 2>&1; then
+  case "$PM" in
+    pacman|xbps)
+      pm_install ghostty >/dev/null 2>&1 || true ;;                  # official repo
+    apk)
+      # official, but lives in the 'testing' repo (not enabled on stable)
+      $SUDO apk add ghostty >/dev/null 2>&1 \
+        || $SUDO apk add --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing ghostty >/dev/null 2>&1 \
+        || true ;;
+    dnf)
+      # not in Fedora's official repos → community COPR
+      { $SUDO dnf copr enable -y scottames/ghostty && pm_install ghostty; } >/dev/null 2>&1 || true ;;
+  esac
+  # cross-distro fallback: the semi-official snap (classic confinement)
+  if ! command -v ghostty >/dev/null 2>&1 && command -v snap >/dev/null 2>&1; then
+    $SUDO snap install ghostty --classic >/dev/null 2>&1 || true
+  fi
+fi
+if command -v ghostty >/dev/null 2>&1; then
+  echo "   ✓ ghostty"
+else
+  echo "   ✗ ghostty — no direct package for $PM. Options:"
+  case "$PM" in
+    apt)    echo "       • community .deb: https://github.com/mkasberg/ghostty-ubuntu" ;;
+    dnf)    echo "       • COPR: sudo dnf copr enable scottames/ghostty && sudo dnf install ghostty" ;;
+    zypper) echo "       • openSUSE dropped it (Zig version) — build from source" ;;
+  esac
+  echo "       • snap:     sudo snap install ghostty --classic"
+  echo "       • AppImage: https://ghostty.org/docs/install/binary (any distro)"
+fi
+
+# ---------------------------------------------------------------------------
+# 6. Report what native repos couldn't provide, with fallback recipes
 # ---------------------------------------------------------------------------
 hint() {
   case "$1" in
@@ -141,12 +177,13 @@ if [ ${#MISSING[@]} -gt 0 ]; then
 fi
 
 echo ""
-echo "==> GUI (manual on Linux):"
-echo "   - ghostty            https://ghostty.org (or your distro's package)"
-echo "   - JetBrainsMono NF   unzip a Nerd Font into ~/.local/share/fonts && fc-cache -f"
+echo "==> Nerd Font (manual — the patched JetBrainsMono NF isn't reliably packaged):"
+echo "   mkdir -p ~/.local/share/fonts && cd ~/.local/share/fonts \\"
+echo "     && curl -fLO https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip \\"
+echo "     && unzip -o JetBrainsMono.zip && rm JetBrainsMono.zip && fc-cache -f"
 
 # ---------------------------------------------------------------------------
-# 6. Shared tail — identical to install.sh
+# 7. Shared tail — identical to install.sh
 # ---------------------------------------------------------------------------
 echo ""
 echo "==> Initialising submodules"
