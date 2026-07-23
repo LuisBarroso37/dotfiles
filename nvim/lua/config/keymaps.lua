@@ -18,7 +18,7 @@ vim.keymap.set({ "n", "v" }, "<leader>d", [["_d]])
 
 -- Yank relative path to system clipboard
 vim.keymap.set("n", "<leader>yp", function()
-  vim.fn.setreg("+", vim.fn.expand("%"))
+  vim.fn.setreg("+", vim.fn.expand("%:."))
 end, { desc = "Yank relative path" })
 
 -- Yank absolute path
