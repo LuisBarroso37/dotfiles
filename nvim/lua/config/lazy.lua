@@ -18,6 +18,9 @@ require("lazy").setup({
   spec = {
     -- add LazyVim and import its plugins
     { "LazyVim/LazyVim", import = "lazyvim.plugins", opts = { colorscheme = "catppuccin-mocha" } },
+    -- swap neo-tree for mini.files
+    { "nvim-neo-tree/neo-tree.nvim", enabled = false },
+    { import = "lazyvim.plugins.extras.editor.mini-files" },
     -- disable LazyVim's default colorscheme
     { "folke/tokyonight.nvim", enabled = false },
     -- catppuccin colorscheme
