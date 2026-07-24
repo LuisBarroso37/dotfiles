@@ -95,7 +95,9 @@ wtc() {
   fi
 }
 
-# Remove a worktree, its tmux session, and its branch (only if already merged).
+# Remove a worktree and its tmux session. Deletes the branch if git considers it
+# merged (fast-forward / merge commit); leaves it in place for squash/rebase-merged
+# branches — run wtclean afterwards to bulk-remove those.
 # Defaults to the current branch; refuses when run from inside the session it
 # would kill — run it from another session (e.g. your main worktree).
 wtr() {
@@ -122,20 +124,10 @@ wtr() {
     return 1
   fi
   git worktree remove "$dir" || return 1
-  # Delete the branch, being clever about *how* it was merged:
-  #   • plain merge → it's an ancestor of main, so `git branch -d` succeeds.
-  #   • squash/rebase merge (our repo's style) → the tip is NOT an ancestor, so
-  #     `-d` fails. Ask GitHub if the PR merged; if so, force-delete (`-D`).
-  #   • no merged PR → keep the branch (unmerged work is never force-deleted).
   if git branch -d "$branch" 2>/dev/null; then
-    echo "✓ deleted branch '$branch' (merged into local base)"
-  elif command -v gh >/dev/null 2>&1 \
-    && gh pr list --head "$branch" --state merged --limit 1 --json number \
-         --jq '.[0].number' 2>/dev/null | grep -q .; then
-    git branch -D "$branch"
-    echo "✓ force-deleted branch '$branch' (PR was squash/rebase-merged on GitHub)"
+    echo "✓ deleted branch '$branch'"
   else
-    echo "• kept branch '$branch' (not merged anywhere — nothing lost)"
+    echo "• kept branch '$branch' (squash/rebase-merged — run wtclean to bulk-remove)"
   fi
   tmux kill-session -t "=$session" 2>/dev/null
   echo "✓ removed worktree $dir (session '$session')"
@@ -143,6 +135,64 @@ wtr() {
   # the next input event before it repaints — so the output above (and the
   # returned prompt) wouldn't show until you pressed a key. Force the redraw.
   [[ -n "$TMUX" ]] && tmux refresh-client 2>/dev/null || true
+}
+
+# Bulk-remove local branches that have already been merged into the default branch.
+# Catches both regular merges (git branch --merged) and squash/rebase merges
+# (detected via remote branch deletion: fetch --prune + branch -vv | grep ': gone]').
+# No GitHub API call needed — relies entirely on local git state after a fetch.
+wtclean() {
+  local main
+  main="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+    || { echo "wtclean: not inside a git repository" >&2; return 1; }
+
+  local base
+  base="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"
+  base="${base#origin/}"
+  [[ -z "$base" ]] && base="main"
+
+  echo "Fetching and pruning remote tracking branches..."
+  git fetch --prune
+
+  local -a candidates=()
+
+  # Regular merges: branch tip is an ancestor of base
+  while IFS= read -r b; do
+    b="${b#[[:space:]]#}"
+    [[ "$b" == "$base" || "$b" == "main" || "$b" == "master" ]] && continue
+    candidates+=("$b")
+  done < <(git branch --merged "$base" 2>/dev/null | grep -v '^\*')
+
+  # Squash/rebase merges: remote branch was deleted after the PR merged
+  while IFS= read -r line; do
+    local b="${${line#[[:space:]]#}%%[[:space:]]*}"
+    [[ "$b" == "$base" || "$b" == "main" || "$b" == "master" ]] && continue
+    candidates+=("$b")
+  done < <(git branch -vv | grep ': gone]')
+
+  candidates=(${(u)candidates[@]})
+
+  if [[ ${#candidates[@]} -eq 0 ]]; then
+    echo "Nothing to remove — no stale merged branches found."
+    return 0
+  fi
+
+  echo "\nBranches to remove:"
+  printf '  %s\n' "${candidates[@]}"
+  echo ""
+  read -r "confirm?Remove ${#candidates[@]} branch(es)? [y/N] "
+  [[ "$confirm" == [yY] ]] || { echo "Aborted."; return 0; }
+
+  local -a failed=()
+  for branch in "${candidates[@]}"; do
+    if git branch -D "$branch" 2>/dev/null; then
+      echo "✓ deleted $branch"
+    else
+      echo "✗ could not delete $branch"
+      failed+=("$branch")
+    fi
+  done
+  [[ ${#failed[@]} -gt 0 ]] && echo "\nFailed to delete: ${failed[*]}"
 }
 
 # Rebase the current branch onto the latest default branch (main/master).
