@@ -1,0 +1,12 @@
+# Herdr configuration — https://herdr.dev/docs/configuration/
+
+[theme]
+name = "catppuccin"
+
+[keys]
+prefix = "ctrl+a"
+
+[worktrees]
+# Fixed directory for all worktree checkouts.
+# Pattern: <directory>/<repo>/<branch-slug>
+directory = "~/.herdr/worktrees"
