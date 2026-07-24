@@ -24,6 +24,13 @@ tmux/plugins/tmux-yank
 tmux/plugins/tmux-resurrect
 tmux/plugins/tmux-continuum
 
+# Herdr runtime files written alongside config.toml when stow folds ~/.config/herdr
+# into a directory symlink → ~/dotfiles/herdr/ on a fresh machine.
+herdr/*.log
+herdr/*.sock
+herdr/session.json
+herdr/.plugins.lock
+
 # Yazi flavors are vendored (committed) so the repo is self-contained — no
 # `ya pkg install` needed at bootstrap. Only skip the non-functional extras:
 # the preview screenshot and the upstream readme. flavor.toml + tmtheme.xml +
