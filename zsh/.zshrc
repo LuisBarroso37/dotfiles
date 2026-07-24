@@ -136,10 +136,11 @@ wtr() {
   [[ -n "$TMUX" ]] && tmux refresh-client 2>/dev/null || true
 }
 
-# Create a herdr worktree workspace for <branch>. Computes the sibling path from
-# the current repo (same convention as wtc: <parent>/<repo>/<branch-slug>) and
-# passes it via --path so herdr's directory config is never consulted.
-# Workspace label is set to <repo>/<branch-slug> to match wtc's session name.
+# Create (or switch to) a herdr workspace for <branch>. Three cases:
+#   1. herdr workspace already open for the branch → focus it
+#   2. git worktree exists at the sibling path (e.g. created by wtc) → open in herdr
+#   3. neither → create the git worktree and open in herdr
+# Path convention matches wtc; herdr's directory config is never consulted.
 wth() {
   local branch="$1"
   if [[ -z "$branch" ]]; then
@@ -153,7 +154,17 @@ wth() {
   local repo="${main:t}" parent="${main:h}"
   local sani="${branch//\//-}"
   local dir="$parent/$repo/$sani"
-  herdr worktree create --branch "$branch" --path "$dir" --label "$repo/$sani"
+  local label="$repo/$sani"
+  local workspace_id
+  workspace_id=$(herdr worktree list 2>/dev/null \
+    | jq -r ".result.worktrees[] | select(.branch == \"$branch\") | .open_workspace_id // empty")
+  if [[ -n "$workspace_id" ]]; then
+    herdr workspace focus "$workspace_id"
+  elif [[ -d "$dir" ]]; then
+    herdr worktree open --path "$dir" --label "$label"
+  else
+    herdr worktree create --branch "$branch" --path "$dir" --label "$label"
+  fi
 }
 
 # Remove a herdr worktree by branch name. Looks up the workspace_id from
