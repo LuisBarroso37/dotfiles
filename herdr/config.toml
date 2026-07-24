@@ -5,6 +5,10 @@ name = "catppuccin"
 
 [keys]
 prefix = "ctrl+a"
+previous_agent = "prefix+shift+k"
+next_agent = "prefix+shift+j"
+navigate_workspace_up = "k"
+navigate_workspace_down = "j"
 
 [worktrees]
 # Fixed directory for all worktree checkouts.
