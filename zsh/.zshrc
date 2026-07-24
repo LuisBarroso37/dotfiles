@@ -67,6 +67,8 @@ command -v mise &>/dev/null && eval "$(mise activate zsh)"
 # them.
 
 # Create (or switch to) a worktree for <branch> and jump into its tmux session.
+# Directory convention (matches herdr): <parent>/<repo>/<branch-slug>
+# Session name: <repo>/<branch-slug>  (= prefix gives tmux exact-match, slashes are safe)
 wtc() {
   local branch="$1"
   if [[ -z "$branch" ]]; then
@@ -76,11 +78,11 @@ wtc() {
   local main
   main="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
     || { echo "wtc: not inside a git repository" >&2; return 1; }
-  main="${main%/.git}"                        # main worktree path
-  local repo="${main:t}" parent="${main:h}"   # repo name + its parent dir
-  local sani="${branch//\//-}"                 # branch made path/target-safe ('/' -> '-')
-  local dir="$parent/$repo.$sani"              # worktree dir: <repo>.<branch> (git sibling)
-  local session="$repo-$sani"                  # tmux session: hyphens only ('.' breaks -t targets)
+  main="${main%/.git}"
+  local repo="${main:t}" parent="${main:h}"
+  local sani="${branch//\//-}"
+  local dir="$parent/$repo/$sani"
+  local session="$repo/$sani"
   if [[ ! -d "$dir" ]]; then
     git worktree add -b "$branch" "$dir" 2>/dev/null \
       || git worktree add "$dir" "$branch" \
@@ -89,7 +91,7 @@ wtc() {
   tmux has-session -t "=$session" 2>/dev/null \
     || tmux new-session -d -s "$session" -c "$dir"
   if [[ -n "$TMUX" ]]; then
-    tmux switch-client -t "=$session"         # already in tmux: move client (no nesting)
+    tmux switch-client -t "=$session"
   else
     tmux attach -t "=$session"
   fi
@@ -116,8 +118,8 @@ wtr() {
   main="${main%/.git}"
   local repo="${main:t}" parent="${main:h}"
   local sani="${branch//\//-}"
-  local dir="$parent/$repo.$sani"              # worktree dir: <repo>.<branch> (git sibling)
-  local session="$repo-$sani"                  # tmux session: hyphens only ('.' breaks -t targets)
+  local dir="$parent/$repo/$sani"
+  local session="$repo/$sani"
   if [[ -n "$TMUX" && "$(tmux display-message -p '#{session_name}')" == "$session" ]]; then
     echo "wtr: refusing — '$session' is the session you're in." >&2
     echo "     Run it from another session (e.g. your main worktree)." >&2
@@ -131,10 +133,62 @@ wtr() {
   fi
   tmux kill-session -t "=$session" 2>/dev/null
   echo "✓ removed worktree $dir (session '$session')"
-  # Destroying a session from inside an attached client leaves tmux waiting for
-  # the next input event before it repaints — so the output above (and the
-  # returned prompt) wouldn't show until you pressed a key. Force the redraw.
   [[ -n "$TMUX" ]] && tmux refresh-client 2>/dev/null || true
+}
+
+# Create a herdr worktree workspace for <branch>. Computes the sibling path from
+# the current repo (same convention as wtc: <parent>/<repo>/<branch-slug>) and
+# passes it via --path so herdr's directory config is never consulted.
+# Workspace label is set to <repo>/<branch-slug> to match wtc's session name.
+wth() {
+  local branch="$1"
+  if [[ -z "$branch" ]]; then
+    echo "usage: wth <branch-name>" >&2
+    return 1
+  fi
+  local main
+  main="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+    || { echo "wth: not inside a git repository" >&2; return 1; }
+  main="${main%/.git}"
+  local repo="${main:t}" parent="${main:h}"
+  local sani="${branch//\//-}"
+  local dir="$parent/$repo/$sani"
+  herdr worktree create --branch "$branch" --path "$dir" --label "$repo/$sani"
+}
+
+# Remove a herdr worktree by branch name. Looks up the workspace_id from
+# `herdr worktree list` by branch, then:
+#   1. herdr worktree remove  — runs git worktree remove + closes herdr workspace
+#      (pass --force if the checkout is dirty and you want to discard changes)
+#   2. git branch -d          — branch deletion is separate; herdr never touches it
+wthr() {
+  local branch="${1:-$(git branch --show-current 2>/dev/null)}"
+  if [[ -z "$branch" ]]; then
+    echo "usage: wthr [branch-name]   (defaults to current branch)" >&2
+    return 1
+  fi
+  if [[ "$branch" == (main|master) ]]; then
+    echo "wthr: refusing to remove the main worktree ($branch)." >&2
+    return 1
+  fi
+  local main
+  main="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+    || { echo "wthr: not inside a git repository" >&2; return 1; }
+  main="${main%/.git}"
+  local repo="${main:t}"
+  local workspace_id
+  workspace_id=$(herdr worktree list \
+    | jq -r ".result.worktrees[] | select(.branch == \"$branch\") | .open_workspace_id // empty")
+  if [[ -z "$workspace_id" ]]; then
+    echo "wthr: no open herdr workspace found for branch '$branch'" >&2
+    return 1
+  fi
+  herdr worktree remove --workspace "$workspace_id" "${@:2}" || return 1
+  if git branch -d "$branch" 2>/dev/null; then
+    echo "✓ deleted branch '$branch'"
+  else
+    echo "• kept branch '$branch' (squash/rebase-merged — run wtclean to bulk-remove)"
+  fi
 }
 
 # Bulk-remove local branches that have already been merged into the default branch.
