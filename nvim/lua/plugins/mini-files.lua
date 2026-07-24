@@ -3,7 +3,7 @@ return {
   dependencies = { "nvim-mini/mini.icons" },
   opts = {
     options = {
-      use_as_default_explorer = true,
+      use_as_default_explorer = false,
     },
   },
   keys = {
