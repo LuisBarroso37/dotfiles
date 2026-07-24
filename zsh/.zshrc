@@ -60,11 +60,11 @@ command -v mise &>/dev/null && eval "$(mise activate zsh)"
 [ -d "$HOME/go/bin" ] && export PATH="$HOME/go/bin:$PATH"
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
-# --- Git worktrees + tmux --------------------------------------------------
-# Worktrees are sibling dirs named <repo>.<branch> (e.g. portal.ICP-1234-desc
-# next to portal); each gets a tmux session named <repo>-<branch> (hyphens, since
-# '.' is the session.window separator in tmux -t targets). sesh (Ctrl+a T) browses
-# them.
+# --- Git worktrees + tmux / herdr ------------------------------------------
+# Worktrees are subdirs named <parent>/<repo>/<branch-slug>; each gets a tmux
+# session named <repo>/<branch-slug> (slashes are safe with the = exact-match
+# prefix). sesh (Ctrl+a T) browses tmux sessions; herdr (wth/wthr) manages the
+# herdr workspaces.
 
 # Create (or switch to) a worktree for <branch> and jump into its tmux session.
 # Directory convention (matches herdr): <parent>/<repo>/<branch-slug>
@@ -157,7 +157,7 @@ wth() {
   local label="$repo/$sani"
   local workspace_id
   workspace_id=$(herdr worktree list 2>/dev/null \
-    | jq -r ".result.worktrees[] | select(.branch == \"$branch\") | .open_workspace_id // empty")
+    | jq -r --arg branch "$branch" '.result.worktrees[] | select(.branch == $branch) | .open_workspace_id // empty')
   if [[ -n "$workspace_id" ]]; then
     herdr workspace focus "$workspace_id"
   elif [[ -d "$dir" ]]; then
@@ -189,7 +189,7 @@ wthr() {
   local repo="${main:t}"
   local workspace_id
   workspace_id=$(herdr worktree list \
-    | jq -r ".result.worktrees[] | select(.branch == \"$branch\") | .open_workspace_id // empty")
+    | jq -r --arg branch "$branch" '.result.worktrees[] | select(.branch == $branch) | .open_workspace_id // empty')
   if [[ -z "$workspace_id" ]]; then
     echo "wthr: no open herdr workspace found for branch '$branch'" >&2
     return 1
@@ -207,6 +207,7 @@ wthr() {
 # (detected via remote branch deletion: fetch --prune + branch -vv | grep ': gone]').
 # No GitHub API call needed — relies entirely on local git state after a fetch.
 wtclean() {
+  setopt local_options extended_glob
   local main
   main="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
     || { echo "wtclean: not inside a git repository" >&2; return 1; }
