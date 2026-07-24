@@ -7,18 +7,44 @@ return {
   },
   keys = {
     {
+      "<leader>fm",
+      function()
+        local mf = require("mini.files")
+        if not mf.close() then
+          mf.open(vim.api.nvim_buf_get_name(0), true)
+        end
+      end,
+      desc = "Toggle mini.files (Current File)",
+    },
+    {
+      "<leader>fM",
+      function()
+        local mf = require("mini.files")
+        if not mf.close() then
+          mf.open(vim.uv.cwd(), true)
+        end
+      end,
+      desc = "Toggle mini.files (cwd)",
+    },
+    {
       "<leader>e",
       function()
-        require("mini.files").open(vim.api.nvim_buf_get_name(0), true)
+        local mf = require("mini.files")
+        if not mf.close() then
+          mf.open(vim.api.nvim_buf_get_name(0), true)
+        end
       end,
-      desc = "Open mini.files (Current File)",
+      desc = "Toggle mini.files (Current File)",
     },
     {
       "<leader>E",
       function()
-        require("mini.files").open(vim.uv.cwd(), true)
+        local mf = require("mini.files")
+        if not mf.close() then
+          mf.open(vim.uv.cwd(), true)
+        end
       end,
-      desc = "Open mini.files (cwd)",
+      desc = "Toggle mini.files (cwd)",
     },
   },
 }

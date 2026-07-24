@@ -21,6 +21,8 @@ require("lazy").setup({
     -- swap neo-tree for mini.files
     { "nvim-neo-tree/neo-tree.nvim", enabled = false },
     { import = "lazyvim.plugins.extras.editor.mini-files" },
+    -- fix: plugin was renamed from echasnovski/ to nvim-mini/
+    { "nvim-mini/mini.icons", opts = {} },
     -- disable LazyVim's default colorscheme
     { "folke/tokyonight.nvim", enabled = false },
     -- catppuccin colorscheme
