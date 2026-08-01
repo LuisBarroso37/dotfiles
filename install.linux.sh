@@ -9,6 +9,10 @@ set -euo pipefail
 #      carry is REPORTED at the end with a fallback recipe — never pretended.
 #   3. On Arch, fall through to the AUR (yay/paru) for the three tools no distro
 #      packages: sesh, carapace, herdr. Bootstrapped if no helper is installed.
+#   3b. Then fall through to upstream GitHub releases, into ~/.local/bin. This is
+#      what makes non-Arch distros viable: Debian has no yazi/sesh/carapace/herdr
+#      and Fedora additionally lacks lazygit/starship, none of which have an AUR
+#      to fall back on.
 #   4. mise (runtime version manager) comes from the repo when packaged and from
 #      its own installer otherwise; language runtimes are then chosen per machine
 #      with `mise use -g` (see .zshrc).
@@ -45,6 +49,14 @@ LOG="${TMPDIR:-/tmp}/dotfiles-install.$$.log"
 : > "$LOG"
 
 MISSING=()  # tools no repo could provide → reported at the end with a recipe
+
+# The GitHub-release fallback installs into ~/.local/bin. .zshrc already puts it
+# first on PATH for future shells, but this run needs it too — otherwise the
+# `command -v` checks in install_tool and verify_install can't see what we just
+# installed and would report it missing.
+mkdir -p "$HOME/.local/bin"
+case ":$PATH:" in *":$HOME/.local/bin:"*) : ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
+export PATH
 
 SUDO=""
 if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
@@ -179,7 +191,105 @@ aur_install() {
 }
 
 # ---------------------------------------------------------------------------
-# 3. Best-effort install (repo → AUR → reported as missing)
+# 2b. GitHub-releases fallback (any distro)
+# ---------------------------------------------------------------------------
+# The AUR covers sesh/carapace/herdr on Arch, but nothing equivalent exists on
+# Debian or Fedora, where yazi, sesh, carapace and herdr — plus lazygit and
+# starship on Fedora — are in no repo at all. All of them publish static Linux
+# binaries on GitHub, so pull those into ~/.local/bin as a last resort before
+# giving up on a tool.
+gh_release_repo() {
+  case "$1" in
+    sesh)      echo "joshmedeski/sesh" ;;
+    carapace)  echo "carapace-sh/carapace-bin" ;;
+    herdr)     echo "herdrdev/herdr" ;;
+    yazi)      echo "sxyazi/yazi" ;;
+    lazygit)   echo "jesseduffield/lazygit" ;;
+    starship)  echo "starship/starship" ;;
+    zoxide)    echo "ajeetdsouza/zoxide" ;;
+    git-delta) echo "dandavison/delta" ;;
+    ripgrep)   echo "BurntSushi/ripgrep" ;;
+    bat)       echo "sharkdp/bat" ;;
+    fd)        echo "sharkdp/fd" ;;
+    jq)        echo "jqlang/jq" ;;
+    gh)        echo "cli/cli" ;;
+    shellcheck) echo "koalaman/shellcheck" ;;
+    *)         return 1 ;;
+  esac
+}
+
+# Binaries to lift out of the archive. Only tools shipping more than one (or
+# under a name that isn't bin_name) need an entry.
+gh_release_bins() {
+  case "$1" in
+    yazi) echo "yazi ya" ;;   # ya is the plugin/package manager half
+    *)    bin_name "$1" ;;
+  esac
+}
+
+# Asset names across these projects are wildly inconsistent — sesh_Linux_x86_64,
+# carapace-bin_1.7.3_linux_amd64, yazi-x86_64-unknown-linux-gnu.zip, a bare
+# herdr-linux-x86_64 — so match the release list rather than hardcoding URLs
+# that would rot at the next upstream rename.
+gh_release_install() {
+  local tool="$1" repo urls url arch_pat tmp f b rc=1
+  repo="$(gh_release_repo "$tool")" || return 1
+  command -v curl >/dev/null 2>&1 || return 1
+
+  case "$(uname -m)" in
+    x86_64|amd64)  arch_pat='x86[_-]?64|amd64|x64' ;;
+    aarch64|arm64) arch_pat='aarch64|arm64' ;;
+    *)             return 1 ;;   # no prebuilt binaries for anything else
+  esac
+
+  # Parsed with grep rather than jq: jq is itself one of the tools this may be
+  # asked to install, so it cannot be a dependency of the installer.
+  urls="$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null \
+          | grep -o '"browser_download_url": *"[^"]*"' \
+          | sed 's/.*"\(https[^"]*\)"/\1/')" || return 1
+  [ -n "$urls" ] || return 1
+
+  # Drop distro packages, installers, checksums and signatures — we want the
+  # portable archive or the bare binary, not something needing a package manager.
+  _pick() {
+    printf '%s\n' "$urls" \
+      | grep -Ei 'linux' \
+      | grep -Eiv '\.(deb|rpm|apk|msi|exe|pkg|sig|asc|pem|sha[0-9]*|sha[0-9]*sum|sbom|json|txt)$' \
+      | grep -Ei "$arch_pat" \
+      | grep -Ei "$1" \
+      | head -1
+  }
+  # Prefer glibc builds; fall back to musl (starship ships Linux musl only).
+  url="$(_pick 'gnu')"
+  [ -n "$url" ] || url="$(_pick '.')"
+  [ -n "$url" ] || return 1
+
+  tmp="$(mktemp -d)" || return 1
+  if curl -fsSL -o "$tmp/asset" "$url"; then
+    case "$url" in
+      *.tar.gz|*.tgz) tar -xzf "$tmp/asset" -C "$tmp" 2>/dev/null ;;
+      *.tar.xz)       tar -xJf "$tmp/asset" -C "$tmp" 2>/dev/null ;;
+      *.tar.bz2)      tar -xjf "$tmp/asset" -C "$tmp" 2>/dev/null ;;
+      *.zip)          unzip -oq "$tmp/asset" -d "$tmp" 2>/dev/null ;;
+      *)              mv "$tmp/asset" "$tmp/$(bin_name "$tool")" ;;  # bare binary
+    esac
+    rc=0
+    for b in $(gh_release_bins "$tool"); do
+      # -print -quit: archives often nest under a versioned directory.
+      f="$(find "$tmp" -type f -name "$b" -print -quit 2>/dev/null)"
+      if [ -n "$f" ]; then
+        install -m 0755 "$f" "$HOME/.local/bin/$b"
+      else
+        rc=1
+      fi
+    done
+  fi
+  rm -rf "$tmp"
+  return "$rc"
+}
+
+# ---------------------------------------------------------------------------
+# 3. Best-effort install (repo → AUR → GitHub releases → reported as missing)
 # ---------------------------------------------------------------------------
 install_tool() {
   local tool="$1" pkg bin
@@ -194,6 +304,8 @@ install_tool() {
     echo "✓ $pkg"
   elif { echo "### AUR: $tool ($(aur_name "$tool"))"; aur_install "$(aur_name "$tool")"; } >>"$LOG" 2>&1; then
     echo "✓ $(aur_name "$tool") (AUR)"
+  elif { echo "### GitHub releases: $tool"; gh_release_install "$tool"; } >>"$LOG" 2>&1; then
+    echo "✓ $(gh_release_repo "$tool") (GitHub release → ~/.local/bin)"
   else
     echo "✗ not available"
     MISSING+=("$tool")
@@ -352,7 +464,7 @@ hint() {
     yazi)      echo "cargo install --locked yazi-fm yazi-cli   (or GitHub releases)" ;;
     sesh)      echo "mise use -g go@latest && go install github.com/joshmedeski/sesh/v2@latest" ;;
     carapace)  echo "GitHub releases: https://github.com/carapace-sh/carapace-bin/releases" ;;
-    herdr)     echo "REQUIRED by .zshrc's wth/wthr — https://github.com/herdr-dev/herdr releases" ;;
+    herdr)     echo "REQUIRED by .zshrc's wth/wthr — https://github.com/herdrdev/herdr/releases" ;;
     jq)        echo "REQUIRED by .zshrc's wth/wthr — GitHub releases: jqlang/jq" ;;
     lazygit)   echo "go install github.com/jesseduffield/lazygit@latest   (or GitHub releases)" ;;
     git-delta) echo "cargo install git-delta   (or GitHub releases: dandavison/delta)" ;;
