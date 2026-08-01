@@ -6,10 +6,23 @@ name = "catppuccin"
 
 [keys]
 prefix = "ctrl+a"
-previous_agent = "prefix+shift+k"
-next_agent = "prefix+shift+j"
+# Agent cycling on alt, not shift: prefix+shift+j/k are herdr's own defaults for
+# swap_pane_down/swap_pane_up, and herdr resolves an explicit-vs-default clash by
+# keeping the explicit binding and silently disabling the default — so binding
+# agent cycling there left no key at all to move a pane within a layout.
+# (`herdr config check` reports ok either way; it does not see this class of clash.)
+previous_agent = "prefix+alt+k"
+next_agent = "prefix+alt+j"
+
+# Navigate mode: j/k drive the workspace list (muscle memory), which takes the
+# keys away from navigate_pane_down/navigate_pane_up — those default to j/k too,
+# and workspace wins the clash by priority, not by file order. So pane focus is
+# rebound explicitly, otherwise navigate mode has no up/down pane movement at all.
+# Navigate-mode shortcuts are mode-local: no `prefix+` element, same as j/k below.
 navigate_workspace_up = "k"
 navigate_workspace_down = "j"
+navigate_pane_up = "ctrl+k"
+navigate_pane_down = "ctrl+j"
 
 # No [worktrees] directory here, deliberately.
 #
@@ -22,5 +35,6 @@ navigate_workspace_down = "j"
 # herdr's setting is a single fixed directory with no per-repo template, so it
 # cannot express "inside each repo's own checkout" — leaving it set only made it
 # look like the layout was configured here when it is not. A worktree created
-# from herdr's own UI (prefix+n) still lands under the default and will miss both
-# behaviours above; use `wth <branch>` instead.
+# from herdr's own UI (prefix+shift+g, the new_worktree action — prefix+n is
+# next_tab) still lands under the default and will miss both behaviours above;
+# use `wth <branch>` instead.

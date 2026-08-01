@@ -9,7 +9,7 @@
 	diffFilter = delta --color-only
 
 [delta]
-	features = catppuccin-mocha  # theme defined below (syntax-theme ships with bat >= 0.26)
+	features = catppuccin-mocha  # theme defined below; its syntax-theme comes from delta's own bundled set (delta --list-syntax-themes), not from bat's config
 	navigate = true              # jump between diff hunks with n / N
 	line-numbers = true
 	side-by-side = true          # two-column diffs; override per-command with -c delta.side-by-side=false

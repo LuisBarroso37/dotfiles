@@ -12,9 +12,16 @@ nvim/.cache/
 nvim/plugin/
 nvim/data/
 
-# Atuin history DB (only config.toml is tracked, not the database)
-atuin/history.db
-atuin/*.db
+# Atuin runtime files written alongside config.toml. On a fresh machine
+# ~/.config/atuin does not exist, so stow FOLDS the package into a directory
+# symlink → ~/dotfiles/atuin/, and atuin then writes these *inside the repo*,
+# where `git add -A` would happily commit them (TERMINAL.md is its AI context
+# file and can carry machine/work context). Once ~/.config/atuin exists as a real
+# directory stow unfolds into per-file links and the files land outside the repo —
+# which is the only reason this machine was never exposed. Databases need no rule:
+# every atuin db path derives from data_dir, i.e. ~/.local/share/atuin/.
+atuin/atuin-receipt.json
+atuin/TERMINAL.md
 
 # tmux plugins managed by tpm (cloned into tmux/plugins/ at install time).
 # Only the catppuccin theme is tracked, as a git submodule (see .gitmodules).

@@ -1,11 +1,17 @@
 --target=~/.config
---ignore=README\.md
+# README.md, .gitignore and .gitmodules are NOT listed: stow's built-in ignore
+# list already skips them (plus LICENSE, .git, *~ and friends), and a CLI
+# --ignore is additive rather than replacing, so repeating them did nothing.
+# Trap: that built-in list only applies while the package has no
+# .stow-local-ignore. Adding one REPLACES the built-in list wholesale — at which
+# point .git, LICENSE, *~ etc. would suddenly start being stowed. If a
+# .stow-local-ignore is ever introduced here, it must re-state those defaults.
 --ignore=install.*\.sh
 --ignore=cheatsheet\.md
---ignore=\.gitignore
+--ignore=check\.sh
+--ignore=REVIEW-LOG\.md
 --ignore=\.stowrc
 --ignore=\.DS_Store
---ignore=\.gitmodules
 --ignore=zsh
 --ignore=terminfo
 --ignore=herdr
