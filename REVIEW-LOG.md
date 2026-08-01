@@ -28,7 +28,7 @@ shape never converge. These do. Status is from the review of 2026-08-01.
 
 | # | Criterion | Gated by | Status |
 |---|---|---|---|
-| C1 | Fresh clone → working machine, no undocumented manual steps | not scriptable | **macOS: unverifiable here** (needs a spare machine). **Linux: open** — see P1-06 |
+| C1 | Fresh clone → working machine, no undocumented manual steps | not scriptable | **Linux: PASS (2026-08-01)** — run end-to-end as a non-root sudo user in clean `archlinux:latest`, `debian:trixie` and `fedora:latest` containers, each finishing with every verification check passing. Two limits stand: the derivatives in each row were never tested directly, and a container has no GUI, so ghostty and the Nerd Font install but are never seen to render. **macOS: still unverified** — needs a spare machine or throwaway account |
 | C2 | Startup health silent (zsh, nvim, tmux) | `check.sh` | pass |
 | C3 | Stow closure — no conflicts, nothing tracked-but-undeployed | `check.sh` | pass |
 | C4 | Reference closure — every tool a config needs is installed | `check.sh` + `verify_install` | 1 warning (P2-01) |
@@ -59,9 +59,15 @@ source. Cross-corroborated findings are marked ×2/×3 — independent audits th
 reached the same conclusion.
 
 **Status: all closed on 2026-08-01.** Every finding was fixed the same day except
-P2-14 (ACCEPTED-RISK, reasoned in its row). `./check.sh` passes with 0 failures
-and 0 warnings. Each fix was verified by execution, not by reading — the evidence
-is summarised per group in "How these were verified" below.
+P2-14 and F-14 (ACCEPTED-RISK, reasoned in their rows) and F-15 (OPEN, low).
+`./check.sh` passes with 0 failures and 0 warnings. Each fix was verified by
+execution, not by reading — the evidence is summarised per group in "How these were
+verified" below.
+
+Then `install.linux.sh` was run end-to-end in Arch, Debian and Fedora containers,
+which found three more defects that static review had not — see "Found by container
+testing". That is the honest shape of this: a clean gate plus a clean audit still
+left defects that only executing the thing on a real machine could surface.
 
 The P4 table has no verdict column: every row in it was corrected on 2026-08-01.
 
@@ -185,11 +191,35 @@ demonstrate the drift mechanism this whole file exists to stop.
 | F-02 | **`check.sh` assumed `.stowrc` was the whole ignore list.** It is not: stow has a BUILT-IN list (`.git`, `README.*`, `LICENSE.*`, `*~`) that `--ignore` only adds to. So deleting three correctly-redundant `--ignore` lines (P3-01) made the gate report `README.md` as an undeployed package. Now derived by asking stow itself — a dry run into a pristine empty target — which cannot drift from stow. | FIXED (2026-08-01) |
 | F-03 | **`check.sh` reported a clean pass over an empty set.** When `install.sh`'s `brew install \` block became a `_formulae=()` array (P1-07), the awk pattern matched nothing and the check announced "all 0 derived formulae resolve". A textbook SILENT-SUCCESS, in the gate written to catch them. Both derivations now hard-fail when they return nothing. A second bug in the same line — `tr -d '[:space:]'` eating newlines, collapsing 24 formulae into one token — was caught the same way. | FIXED (2026-08-01) |
 | F-04 | **The prescribed fix for P1-04 was insufficient.** Clearing jsonls' `documentFormattingProvider` alone would not have worked: `LazyVim.lsp.formatter` accepts a client advertising `textDocument/formatting` **or** `rangeFormatting`, and jsonls advertises both. Both are now cleared. Recorded as the standing reminder that a finding and its proposed remedy are two separate claims, and the remedy usually got less scrutiny. | FIXED (2026-08-01) |
-| F-05 | `install.common.sh`'s new `have_tool` and `install.linux.sh`'s new `tool_ok`/`alt_bins` overlap conceptually — both answer "is this tool really present". They were written by separate passes that could not safely edit each other's file. Qualifies under improvement criterion 2 (duplicate logic that can drift). | OPEN — consolidate when either is next touched |
-| F-06 | `nvim/lua/plugins/vtsls.lua` no longer contains any vtsls configuration after P3-05; it holds only the editor-wide `inlay_hints` override, so the filename now misleads. Qualifies only weakly — the cost is future reader confusion, nothing breaks. | OPEN (low) — rename or relocate when next editing nvim specs |
+| F-05 | `install.common.sh`'s new `have_tool` and `install.linux.sh`'s new `tool_ok`/`alt_bins` overlap conceptually — both answer "is this tool really present". They were written by separate passes that could not safely edit each other's file. Qualifies under improvement criterion 2 (duplicate logic that can drift). | **FIXED (2026-08-01)** — one `tool_bins` table in `install.common.sh` now holds every binary name a tool may answer to; `bin_name` returns the primary (still one name, since the Linux release fallback consumes it as a literal filename) and `have_tool` accepts any. `tool_bin` and `alt_bins` deleted. Note the primary for `sevenzip` is now `7zz`, which is inert: `$bin` is only consulted for tools with a version floor, sevenzip has none and no release fallback |
+| F-06 | `nvim/lua/plugins/vtsls.lua` no longer contains any vtsls configuration after P3-05; it holds only the editor-wide `inlay_hints` override, so the filename now misleads. Qualifies only weakly — the cost is future reader confusion, nothing breaks. | **FIXED (2026-08-01)** — renamed to `lsp.lua`; `inlay_hints.enabled=false` and formatting.lua's `setup.jsonls` both re-probed as still in effect |
 | F-07 | The sesh picker's "all" filter moved to `ctrl-s`, which terminals with `ixon` can intercept as XOFF. fzf puts the terminal in raw mode so it should not bite. | ACCEPTED-RISK (2026-08-01) — if that filter ever feels dead, this is the first thing to check |
 | F-08 | yazi's four preview backends are now verified, but as a **warning** rather than a failure when simply absent. Making them fatal would newly break machines that never had them; a backend that *fails to install during a run* is still a hard `✗`. | ACCEPTED-RISK (2026-08-01) — deliberate asymmetry |
 | F-09 | The stray `~/.config/config.toml` symlink (P3-12) is removed by code in `install.common.sh` but still exists on this machine — the cleanup runs on the next `./install.sh`. Left deliberately: letting the installer do it is also the end-to-end proof the new block works. | FIXED in code (2026-08-01) — clears on next install run |
+
+# Found by container testing (2026-08-01)
+
+Running `install.linux.sh` end-to-end in clean Arch, Debian and Fedora containers
+found three defects that no amount of static review had. All three were fixed in
+`823beef`, `78cad97` and `d134098`; reviewing those commits then found a fourth.
+
+Two of the three were **invisible on the development machine**, which is the same
+lesson as P2-08 and F-01 arriving by a third route.
+
+| ID | Finding | Verdict |
+|---|---|---|
+| F-10 | **Every interactive zsh exited 1.** `zsh/.zshrc` ended with `[ -f ~/.zshrc.local ] && source …`, and being the last line its status became the file's. `~/.zshrc.local` is untracked and absent on most machines, so the test failed, `&&` short-circuited, and `zsh -i -c exit` returned 1 on a completely healthy shell — breaking anything that checks whether startup succeeded, `check.sh`'s C2 among them. Invisible here because this machine *has* that file. | FIXED `823beef` — `if` form, which returns 0 when the file is simply absent while still propagating a real failure from inside it |
+| F-11 | **`check.sh`'s own timeout wrapper could never work.** `guarded 30 in_pty …` ran `timeout(1)` — an external binary — with a shell function as its command, which it cannot execve, so it died with 127 and C2 reported "zsh -i exited 127" regardless of what `.zshrc` did. Invisible on macOS, which ships no `timeout`, so the broken branch never ran; it fired on every container. | FIXED `78cad97` for C2 — timeout moved inside the pty, where `script` runs it through `sh` |
+| F-12 | **An exhausted GitHub API quota was reported as "no repo has this tool".** `curl -f` collapsed every non-2xx into one silent failure, so a rate-limited run listed eight tools as unavailable and sent the user hand-installing things that would have worked an hour later. The release fallback spends one request per unpackaged tool, so a Debian or Fedora run costs ~8 of the 60/hour an unauthenticated IP gets. A textbook SILENT-SUCCESS inversion — a transient condition presented as a permanent one. | FIXED `d134098` — status captured alongside the body, 403/429 identified as rate limiting and said so before the manual list, and a token used when `GITHUB_TOKEN`/`GH_TOKEN`/authenticated `gh` can supply one |
+| F-13 | **F-11's fix was incomplete.** The same `guarded … in_pty` construct survived in `check.sh`'s nvim pty probe. Because that path is opt-in it was never exercised — and it fails worse than C2 did: `timeout` returns **127**, the code special-cased only 124, so it fell through to the success branch and grepped an empty file, reporting "nvim loads without errors" for a probe that never started. A false pass. | **FIXED (2026-08-01)** — timeout built into the probe's own argv, a `PROBE-COMPLETED` sentinel added (`:messages` is legitimately empty on a healthy config, so emptiness could not distinguish "nothing to report" from "never ran"), an unexpected status is now a failure, and the now-callerless `guarded` helper deleted |
+| F-14 | The nvim pty probe failed 3/3 immediately after a batch of killed/orphaned nvim processes, then passed 8/8 from a clean state. Dirty prior TUI state, not a config fault. | ACCEPTED-RISK (2026-08-01) — the probe stays opt-in, and F-13's sentinel means a non-completion is now reported honestly instead of passing silently |
+| F-15 | The GitHub token is passed as `-H "Authorization: Bearer …"`, so it appears in the process argument list and is readable from `/proc/<pid>/cmdline` by other local users. Real mechanism, negligible impact on a single-user machine; `curl --config -` would keep it off argv. | OPEN (low) — recorded rather than fixed, because by this file's own improvement criteria the cost today is nil |
+
+**Review verdict on the three pushed commits: correct.** Each diagnosis matches the
+mechanism, each fix is minimal, and the empty-array expansion in `d134098`
+(`${GH_API_AUTH[@]+"${GH_API_AUTH[@]}"}`) is the right `set -u`-safe idiom. Dropping
+`-f` to capture the status is necessary and the 200/403/429/other split is correct.
+The only gaps were F-13 (the incomplete fix) and F-15 (low).
 
 ## How these were verified
 
