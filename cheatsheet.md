@@ -136,8 +136,22 @@ this file):
 | Next / prev word | `w` / `b` |
 | Next / prev WORD (whitespace-delimited) | `W` / `B` |
 | Next occurrence of word under cursor | `*` |
+| Same, partial match (no word boundaries) | `g*` |
+| Jump to the matching bracket | `%` |
 | Flash jump (leap anywhere on screen) | `s` then 2 chars |
 | Back / forward (jump list) | `Ctrl+o` / `Ctrl+i` |
+| Open link / path under cursor in system handler | `gx` |
+| Open the file whose path is under the cursor | `gf` |
+
+**Marks** — drop a bookmark, come back to it later:
+
+| Action | Key |
+|--------|-----|
+| Mark, file-local | `m` + **lowercase** letter (e.g. `ma`) |
+| Mark, reachable from any file | `m` + **UPPERCASE** letter (e.g. `mA`) |
+| Jump back, exact line & column | `` ` `` + the letter (`` `a ``) |
+| Jump back, first non-blank of the line | `'` + the letter (`'a`) |
+| List all marks | `:marks` |
 
 ### File & Buffer Navigation
 
@@ -175,8 +189,33 @@ this file):
 3. `cgn` — change first match, type replacement (or nothing to delete), then `Escape`
 4. `.` — repeat for each occurrence
 
+The longhand version of the same thing, if `cgn` slips your mind: `*` `N`
+(`*` jumps ahead, `N` comes back to where you started) → `ciw` + replacement +
+`Escape` → then `n` `.` `n` `.` … `n` moves to the next match, `.` re-runs the
+change. `cgn` is the shorter form because it folds the `n` into the repeat.
+
 Or delete all at once after `*`:
 - `:%s///g` — empty pattern reuses the `*` search, replaces all with nothing
+
+**Refactor across every file in the project**, when `<leader>sr` (grug-far)
+isn't what you want:
+
+```vim
+:vim /pattern/ **        " :vimgrep — populate the quickfix list from every file under cwd
+:copen                   " inspect the hits before touching anything
+:cdo s/old/new/ge | update
+```
+
+- `:cdo` runs the command once **per quickfix entry**, not per file.
+- The **`e`** flag matters because of that. Two matches on the same line are two
+  entries; the first `s/…/…/g` already fixes both, so the second entry's `:s`
+  finds nothing, raises `E486: Pattern not found`, and aborts every remaining
+  entry. `e` swallows that and lets the run finish.
+- `| update` writes each buffer as it goes. **`:cdo` alone does not save
+  anything** — the substitution happens in memory and the file on disk is
+  unchanged.
+- `:cfdo` is the per-*file* variant, which is what you want with `%s`:
+  `:cfdo %s/old/new/ge | update`.
 
 ### Editing & Text Objects
 
@@ -200,7 +239,13 @@ Or delete all at once after `*`:
 | Yank inside `[]` | `yi[` |
 | Undo / redo | `u` / `Ctrl+r` |
 | Select lines (line-visual mode) | `V` then `j`/`k` to extend |
+| Reselect the last visual selection | `gv` |
 | Move current line or selection down / up | `Alt+j` / `Alt+k` (Mac: `Option+j` / `Option+k`) |
+| Join line below onto this one (with a space) | `J` |
+| Join with **no** space inserted | `gJ` |
+| Paste **before** the cursor | `P` (after is `p`) |
+| Re-indent the whole file | `gg=G` |
+| Delete the word behind the cursor, in insert mode | `Ctrl+w` |
 
 **Delete a line range:**
 
@@ -218,11 +263,34 @@ Or delete all at once after `*`:
 | Action | Key / Command |
 |--------|---------------|
 | Paste your last yank (ignores any deletes) | `"0p` |
+| Paste the 3rd-most-recent **delete** | `"3p` |
+| Yank to the **system** clipboard | `"+y` (e.g. `"+yy`, or `"+y` over a visual selection) |
+| Paste from the system clipboard | `"+p` |
 | Paste over selection, keep your yank | `<leader>p` (visual) |
 | Delete without saving to a register (black hole) | `<leader>d` |
 | Explicit black-hole delete | `"_d` (e.g. `"_dd`) |
 | Yank current file's relative path to clipboard | `<leader>yp` |
 | Yank current file's absolute path to clipboard | `<leader>yP` |
+| See what every register holds | `:registers` |
+
+> `"1`–`"9` are the **delete ring**, newest first — `"1p` is your last delete,
+> `"3p` the one two before that. Yanks never enter it; they go to `"0`.
+> Caveat: only deletes of a line or more land in the ring. A *small* delete
+> (`dw`, `x`, `de` — anything inside one line) goes to `"-` instead, so
+> `"-p` is the one you want after a `dw`.
+
+**Macros** — record a sequence of edits once, replay it:
+
+| Action | Key |
+|--------|-----|
+| Start recording into register `h` | `qh` … then do the edits … then `q` |
+| Replay it once | `@h` |
+| Replay it 20 times | `20@h` |
+| Replay whatever you last replayed | `@@` |
+| Inspect / edit a recorded macro | `"hp` pastes it onto a line; edit it, then `0"hy$` puts it back |
+
+> Pick any lowercase letter as the register — `h` is just a habit. Recording
+> into an UPPERCASE letter (`qH`) **appends** to that macro instead of replacing it.
 
 ### LSP
 
