@@ -11,7 +11,16 @@ next_agent = "prefix+shift+j"
 navigate_workspace_up = "k"
 navigate_workspace_down = "j"
 
-[worktrees]
-# Fixed directory for all worktree checkouts.
-# Pattern: <directory>/<repo>/<branch-slug>
-directory = "~/.herdr/worktrees"
+# No [worktrees] directory here, deliberately.
+#
+# It was set to "~/.herdr/worktrees", which is (a) herdr's own default anyway and
+# (b) never consulted: wth/wthr always pass an explicit --path, placing worktrees
+# at <parent>/<repo>/<branch-slug>, i.e. *nested inside* the main checkout. That
+# nesting is what lets Neovim's 'exrc' find the repo's .nvim.lua from a worktree,
+# and it is what _wt_sync_excludes keys off to keep them out of `git status`.
+#
+# herdr's setting is a single fixed directory with no per-repo template, so it
+# cannot express "inside each repo's own checkout" — leaving it set only made it
+# look like the layout was configured here when it is not. A worktree created
+# from herdr's own UI (prefix+n) still lands under the default and will miss both
+# behaviours above; use `wth <branch>` instead.
