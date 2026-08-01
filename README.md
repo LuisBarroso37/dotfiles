@@ -62,18 +62,33 @@ chmod +x install.sh
 ./install.sh
 ```
 
-**Linux** (native package manager — apt/dnf/pacman/zypper/apk/xbps):
+**Linux** — `pacman`, `apt` or `dnf`, covering:
+
+| Package manager | Distros | Status |
+| --- | --- | --- |
+| `pacman` | Arch, Manjaro, EndeavourOS, CachyOS | verified end-to-end |
+| `apt` | Debian, Ubuntu, Mint, Pop!\_OS, Raspbian | package names verified |
+| `dnf` | Fedora, RHEL, Rocky, AlmaLinux | package names verified |
+
+openSUSE (`zypper`), Void (`xbps`) and Alpine (`apk`) are not supported — see the
+header of `install.linux.sh` for why, and what adding one back would take.
 
 ```sh
 cd ~/dotfiles
 chmod +x install.linux.sh
-./install.linux.sh
+./install.linux.sh      # NOT with sudo — it escalates on its own
 ```
 
-`install.linux.sh` detects the package manager, installs every tool it can, and
-**reports** anything the distro's repos don't carry with a copy-paste fallback
-recipe (rather than pretending it succeeded). GUI bits (Ghostty, the Nerd Font)
-are always a manual step on Linux — the script prints the exact commands.
+It installs each tool from the distro's repos, falling through to the AUR on
+Arch and then to upstream GitHub releases (into `~/.local/bin`) for anything the
+repos don't carry — so Debian and Fedora get a complete install too, despite
+packaging neither `sesh`, `carapace`, `herdr` nor `yazi`. Whatever it still
+can't find is **reported** with a copy-paste recipe rather than pretended.
+
+It also installs the JetBrainsMono Nerd Font, makes `zsh` your login shell, and
+finishes with a verification pass over every binary and symlink. Ghostty is the
+one piece that can still need a manual step — it's a GUI app with no portable
+binary, so on Debian/Fedora the script prints the .deb / COPR / snap options.
 
 Both scripts will:
 - Install all tools listed above (via `brew` on macOS, the native PM on Linux)

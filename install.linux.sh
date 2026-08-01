@@ -3,6 +3,23 @@ set -euo pipefail
 
 # Linux bootstrap for these dotfiles. Companion to install.sh (macOS/Homebrew).
 #
+# SUPPORTED — three package managers, and therefore these distro families:
+#
+#   pacman   Arch, Manjaro, EndeavourOS, CachyOS      fully verified (daily driver)
+#   apt      Debian, Ubuntu, Mint, Pop!_OS, Raspbian  package names verified
+#   dnf      Fedora, RHEL, Rocky, AlmaLinux           package names verified
+#
+# "Verified" means the package names were checked against each distro's package
+# index and the GitHub release assets were fetched and run; it does NOT mean the
+# script has been executed end-to-end on Debian or Fedora. Only Arch has had that.
+#
+# NOT supported, deliberately: zypper (openSUSE) and xbps (Void) were removed
+# rather than carried as untested guesses — a branch that claims support and then
+# fails on a wrong package name is worse than an upfront "unsupported". Alpine
+# (apk) likewise: it is musl, so the prebuilt glibc binaries this script falls
+# back to would not even load. Adding one back means verifying its package names
+# and, for Alpine, teaching gh_release_install to prefer musl assets.
+#
 # Philosophy — because we can't know the distro *or* which tools its repos carry:
 #   1. Detect the package manager (not the distro name) at runtime.
 #   2. Best-effort install every tool via that PM; whatever the repo doesn't
@@ -80,15 +97,16 @@ fi
 # 1. Detect the package manager
 # ---------------------------------------------------------------------------
 echo "==> Detecting package manager"
-if   command -v apt-get      >/dev/null 2>&1; then PM=apt
-elif command -v dnf          >/dev/null 2>&1; then PM=dnf
-elif command -v pacman       >/dev/null 2>&1; then PM=pacman
-elif command -v zypper       >/dev/null 2>&1; then PM=zypper
-elif command -v apk          >/dev/null 2>&1; then PM=apk
-elif command -v xbps-install >/dev/null 2>&1; then PM=xbps
+if   command -v apt-get >/dev/null 2>&1; then PM=apt
+elif command -v dnf     >/dev/null 2>&1; then PM=dnf
+elif command -v pacman  >/dev/null 2>&1; then PM=pacman
 else
-  echo "!! No supported package manager found (apt/dnf/pacman/zypper/apk/xbps)."
-  echo "   Install the tools manually, then re-run from the '==> Stowing' step."
+  echo "!! Unsupported package manager." >&2
+  echo "   This script supports apt, dnf and pacman only — see the header." >&2
+  echo "" >&2
+  echo "   To use these dotfiles anyway, install the tools your distro provides" >&2
+  echo "   by hand — at minimum git, curl, zsh, tmux and stow — then re-run." >&2
+  echo "   The GitHub-releases fallback covers most of the rest." >&2
   exit 1
 fi
 echo "   Using: $PM"
@@ -100,24 +118,20 @@ pm_install() { # install one or more packages; returns non-zero if the PM fails
     apt)    $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" </dev/null ;;
     dnf)    $SUDO dnf install -y "$@" </dev/null ;;
     pacman) $SUDO pacman -S --needed --noconfirm "$@" </dev/null ;;
-    zypper) $SUDO zypper --non-interactive install "$@" </dev/null ;;
-    apk)    $SUDO apk add "$@" </dev/null ;;
-    xbps)   $SUDO xbps-install -Sy "$@" </dev/null ;;
   esac
 }
 
 pkg_name() { # map a tool to this PM's package name (differences are the exception)
   case "$1" in
     fd)          case "$PM" in apt|dnf) echo "fd-find" ;; *) echo "fd" ;; esac ;;
-    git-delta)   case "$PM" in apk|xbps) echo "delta" ;; *) echo "git-delta" ;; esac ;;
-    # Arch/Alpine/Void ship GitHub's CLI as github-cli, not gh.
-    gh)          case "$PM" in pacman|apk|xbps) echo "github-cli" ;; *) echo "gh" ;; esac ;;
+    # Arch ships GitHub's CLI as github-cli, not gh.
+    gh)          case "$PM" in pacman) echo "github-cli" ;; *) echo "gh" ;; esac ;;
     sevenzip)    case "$PM" in apt) echo "p7zip-full" ;; dnf) echo "p7zip" ;; *) echo "7zip" ;; esac ;;
-    poppler)     case "$PM" in pacman) echo "poppler" ;; zypper) echo "poppler-tools" ;; *) echo "poppler-utils" ;; esac ;;
-    imagemagick) case "$PM" in dnf|zypper|xbps) echo "ImageMagick" ;; *) echo "imagemagick" ;; esac ;;
-    shellcheck)  case "$PM" in dnf|zypper) echo "ShellCheck" ;; *) echo "shellcheck" ;; esac ;;
+    poppler)     case "$PM" in pacman) echo "poppler" ;; *) echo "poppler-utils" ;; esac ;;
+    imagemagick) case "$PM" in dnf) echo "ImageMagick" ;; *) echo "imagemagick" ;; esac ;;
+    shellcheck)  case "$PM" in dnf) echo "ShellCheck" ;; *) echo "shellcheck" ;; esac ;;
     # Supplies tic, used to compile terminfo/ below.
-    ncurses)     case "$PM" in apt) echo "ncurses-bin" ;; zypper) echo "ncurses-utils" ;; *) echo "ncurses" ;; esac ;;
+    ncurses)     case "$PM" in apt) echo "ncurses-bin" ;; *) echo "ncurses" ;; esac ;;
     *)           echo "$1" ;;
   esac
 }
@@ -138,9 +152,7 @@ aur_name() { # AUR package for the tools no distro repo carries
 echo "==> Refreshing package index"
 case "$PM" in
   apt)    $SUDO apt-get update >>"$LOG" 2>&1 || true ;;
-  zypper) $SUDO zypper --non-interactive refresh >>"$LOG" 2>&1 || true ;;
-  xbps)   $SUDO xbps-install -S >>"$LOG" 2>&1 || true ;;
-  *)      : ;;  # dnf/pacman/apk refresh implicitly on install
+  *)      : ;;  # dnf and pacman refresh implicitly on install
 esac
 
 # ---------------------------------------------------------------------------
@@ -259,7 +271,9 @@ gh_release_install() {
       | grep -Ei "$1" \
       | head -1
   }
-  # Prefer glibc builds; fall back to musl (starship ships Linux musl only).
+  # Prefer glibc builds — all three supported distros are glibc — then fall back
+  # to whatever else is offered, since some projects (starship for a long while)
+  # ship Linux musl builds exclusively. Static musl binaries run fine on glibc.
   url="$(_pick 'gnu')"
   [ -n "$url" ] || url="$(_pick '.')"
   [ -n "$url" ] || return 1
@@ -347,7 +361,7 @@ if [ "$PM" = apt ]; then
   fi
 fi
 
-# mise is packaged on Arch/Void but not everywhere; fall back to its own
+# mise is packaged on Arch but not everywhere; fall back to its own
 # installer only when the loop above couldn't get it.
 if ! command -v mise >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/mise" ]; then
   echo "==> Installing mise via its own installer"
@@ -396,12 +410,8 @@ fi
 echo "==> Installing ghostty"
 if ! command -v ghostty >/dev/null 2>&1; then
   case "$PM" in
-    pacman|xbps)
+    pacman)
       pm_install ghostty >>"$LOG" 2>&1 || true ;;                    # official repo
-    apk)
-      # official, but lives in the 'testing' repo (not enabled on stable)
-      { $SUDO apk add ghostty \
-        || $SUDO apk add --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing ghostty; } >>"$LOG" 2>&1 || true ;;
     dnf)
       # not in Fedora's official repos → community COPR
       { $SUDO dnf copr enable -y scottames/ghostty && pm_install ghostty; } >>"$LOG" 2>&1 || true ;;
@@ -418,7 +428,6 @@ else
   case "$PM" in
     apt)    echo "       • community .deb: https://github.com/mkasberg/ghostty-ubuntu" ;;
     dnf)    echo "       • COPR: sudo dnf copr enable scottames/ghostty && sudo dnf install ghostty" ;;
-    zypper) echo "       • openSUSE dropped it (Zig version) — build from source" ;;
   esac
   echo "       • snap:     sudo snap install ghostty --classic"
   echo "       • AppImage: https://ghostty.org/docs/install/binary (any distro)"
