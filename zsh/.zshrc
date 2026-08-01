@@ -554,4 +554,12 @@ function y() {
 # starts clean. Language runtimes are handled by mise (activated above); pick
 # versions per machine with `mise use -g`. Sourced LAST so anything here can
 # still override earlier setup.
-[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"
+# An `if` rather than `[ -f … ] && source …`: this is the LAST line of the file,
+# so its status becomes .zshrc's, and the && form leaves a non-zero one behind on
+# every machine without the (untracked, usually absent) local file. That made
+# `zsh -i -c exit` return 1 — breaking any caller that checks whether shell
+# startup succeeded, check.sh's C8 gate among them. The if form returns 0 when
+# the file simply isn't there, while still propagating a real failure inside it.
+if [ -f "$HOME/.zshrc.local" ]; then
+  source "$HOME/.zshrc.local"
+fi
