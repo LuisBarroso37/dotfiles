@@ -67,8 +67,13 @@ chmod +x install.sh
 | Package manager | Distros | Status |
 | --- | --- | --- |
 | `pacman` | Arch, Manjaro, EndeavourOS, CachyOS | verified end-to-end |
-| `apt` | Debian, Ubuntu, Mint, Pop!\_OS, Raspbian | package names verified |
+| `apt` | Debian, Ubuntu, Mint, Pop!\_OS | package names verified |
 | `dnf` | Fedora, RHEL, Rocky, AlmaLinux | package names verified |
+
+**64-bit only** — x86_64 and aarch64. A 32-bit userland (`armv7l`/`armhf`) gets no
+GitHub-release fallback at all, and eight of the tools are in no apt repo, herdr
+among them — which `.zshrc` hard-depends on. 64-bit Raspberry Pi OS is Debian and
+takes the `apt` path unchanged; the 32-bit image is not supported.
 
 openSUSE (`zypper`), Void (`xbps`) and Alpine (`apk`) are not supported — see the
 header of `install.linux.sh` for why, and what adding one back would take.
@@ -116,6 +121,51 @@ so the tracked scripts stay portable.
 
 All configs will be in place and your shell, editor, and tools will pick them up automatically.
 
+### 4. Recreate your git identity
+
+Nothing in this repo creates `~/.gitconfig`, so on a fresh machine the first
+`git commit` fails with *"Author identity unknown"*. And `~/.gitconfig`
+**overrides** the tracked `.config/git/config`, so this split can't live in the
+repo — it has to be written by hand on every new machine.
+
+Both files are untracked: `~/.gitconfig` carries the work identity as the
+default, and `~/.gitconfig-personal` is included for the personal repos only, so
+commits there aren't authored by your work address.
+
+```sh
+cat > ~/.gitconfig <<'EOF'
+[user]
+	email = you@work.example
+	name = Your Work Name
+
+[includeIf "gitdir:~/dotfiles/"]
+	path = ~/.gitconfig-personal
+[includeIf "gitdir:~/.claude/skills/"]
+	path = ~/.gitconfig-personal
+EOF
+
+cat > ~/.gitconfig-personal <<'EOF'
+[user]
+	name = LuisBarroso37
+	email = 58770446+LuisBarroso37@users.noreply.github.com
+EOF
+```
+
+---
+
+## Updating an existing machine
+
+```sh
+cd ~/dotfiles
+git pull && ./install.sh      # or ./install.linux.sh
+```
+
+Re-running the install script *is* the update path — every step is idempotent,
+so it's safe on a machine that's already set up. Don't stop at `git pull`:
+config changes regularly come with a package step, and a pull-only machine ends
+up with dead shell functions (`wth`/`wthr` need `jq` and `herdr`) or silently
+missing behaviour (yazi's preview backends).
+
 ---
 
 ## How Stow works in practice
@@ -145,16 +195,17 @@ stow --target="$HOME" zsh  # zsh dotfiles → ~
 shape for them:
 
 - `herdr/` — herdr writes runtime state (logs, sockets, `session.json`) into
-  `~/.config/herdr`, so that has to stay a real directory. `install.sh` links
-  only `config.toml` into it by hand. Left to stow, the whole restow aborts with
+  `~/.config/herdr`, so that has to stay a real directory. `install.common.sh`
+  links only `config.toml` into it by hand. Left to stow, the whole restow aborts with
   *"existing target is not owned by stow"* and **no other package gets restowed
   either**.
 - `terminfo/` — terminfo sources are *compiled* into `~/.terminfo` with `tic`,
-  not symlinked. `install.sh` does that. It carries an `xterm-256color` variant
+  not symlinked. `install.common.sh` does that. It carries an `xterm-256color` variant
   with `Smulx`/`Setulc` so Neovim emits undercurl (red squiggles on LSP
   diagnostics) inside herdr panes, which force `TERM=xterm-256color`; `.zshrc`
   switches `TERM` to it when it detects a herdr pane. Inside tmux the equivalent
-  fix is `terminal-features ',*:usstyle'` in `tmux.conf`.
+  fix is `set-option -ga terminal-features ',*:RGB:usstyle'` in `tmux.conf` —
+  copy the whole value, the same line carries the true-colour capability.
 
 **Machine-specific shell config** — anything you *don't* want on every machine (the Angular CLI, Docker hosts, embedded toolchains, SDKMAN, and any runtime not managed by mise) lives in `~/.zshrc.local`, which the tracked `.zshrc` sources at the very end if it exists:
 

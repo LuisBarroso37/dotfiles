@@ -72,7 +72,7 @@
 | List worktrees | `git worktree list` |
 | Rebase current branch onto latest main | `wtrebase` — fetches, rebases onto `origin/<main>` (auto-stashes), and fast-forwards the main worktree too if it's clean & on main |
 | Remove a worktree (+ session, + branch if merged) | `wtr ICP-1234-desc` — from your **main** session, not from inside it |
-| Remove the worktree you're near | `wtr` (no arg → current branch) — must be run from **another** session |
+| Remove the worktree you're standing in | leave it first, then name the branch: `wtr ICP-1234-desc` from another session — no-arg `wtr` resolves the branch from the **current** shell, so the cwd guard always refuses (`wthr` guards the same way) |
 | Bulk-delete branches whose PRs have merged | `gh poi` |
 
 - ✅ `wtc` drops you straight into the new worktree's session (switches client if already in tmux, attaches if not).
@@ -92,8 +92,9 @@ this file):
 | Action | Key |
 |--------|-----|
 | Workspace picker | `Ctrl+a w` |
-| Previous / next workspace | `Ctrl+a k` / `Ctrl+a j` |
-| Previous / next agent | `Ctrl+a K` / `Ctrl+a J` |
+| Previous / next workspace | `Ctrl+a w` (navigate mode), then bare `k` / `j` |
+| Move pane focus up / down | `Ctrl+a w` (navigate mode), then `Ctrl+k` / `Ctrl+j` |
+| Previous / next agent | `Ctrl+a Alt+k` / `Ctrl+a Alt+j` |
 
 > Don't close a repo-parent workspace to tidy up — it cascades and closes every
 > linked-worktree workspace under it.
@@ -102,7 +103,7 @@ this file):
 
 > **Mental model:** `sesh` / `Ctrl+b T` = pick a main clone + hop between anything · `wtc` = start/enter a ticket worktree · `wtr` = tear one down · `wtrebase` = stay on top of main. Sessions do auto-restore across reboots (see the note at the end), but these commands rebuild any of them deterministically.
 
-1. **Open Ghostty** → plain shell, no tmux yet. Jump into a project with **`Ctrl+b T`** → pick `portal` / `intocare` / `dotfiles` (or `sesh connect portal`). This starts tmux fresh and drops you in that repo's main-clone session. Keep main clones on `main`.
+1. **Open Ghostty** → plain shell, no tmux yet. Jump into a project with **`s`** (the zsh function — `Ctrl+b T` is a tmux binding and needs an attached client, so it does nothing here) → pick `portal` / `intocare` / `dotfiles` (or `sesh connect portal`). This starts tmux fresh and drops you in that repo's main-clone session. Keep main clones on `main`.
 2. **Start a ticket** — from anywhere inside the repo: `wtc ICP-1234-desc`. Creates (or reuses) the worktree and drops you into its `<repo>/ICP-1234-desc` session.
 3. **Hop around** — `Ctrl+b T` anytime to switch sessions; `Ctrl+b d` to detach (session keeps running).
 4. **Stay current** — from inside a ticket session: `wtrebase` (rebase onto `origin/main`, auto-stash, fast-forward main clone too).
@@ -157,8 +158,8 @@ this file):
 
 | Action | Key |
 |--------|-----|
-| Open file explorer tree (snacks) | `<leader>e` |
-| Focus file explorer | `<leader>E` |
+| Open file explorer tree (snacks, root dir) | `<leader>e` |
+| Same, rooted at the cwd instead of the root dir (they differ in a monorepo) | `<leader>E` |
 | mini.files browser (current file) | `<leader>fm` |
 | mini.files browser (cwd) | `<leader>fM` |
 | Find file (fuzzy) | `<leader><space>` or `<leader>ff` |
@@ -353,6 +354,7 @@ isn't what you want:
 | Open terminal (root dir / cwd) | `<leader>ft` / `<leader>fT` |
 | Toggle terminal | `Ctrl+/` |
 | Toggle word wrap | `<leader>uw` |
+| Toggle rendered markdown (render-markdown) | `<leader>um` |
 | Save | `:w` or `Ctrl+S` (works in normal, insert, visual) |
 | Quit | `:q` |
 | Save & quit | `:wq` |
