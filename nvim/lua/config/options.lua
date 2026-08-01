@@ -12,3 +12,10 @@ vim.opt.smoothscroll = false -- LazyVim enables this but it breaks <C-d>zz / <C-
 -- the explorer enabled in lua/plugins/snacks.lua, both are unnecessary.
 --   nvim    -> dashboard
 --   nvim .  -> snacks explorer tree
+
+-- Load a project's own `.nvim.lua` / `.nvimrc` / `.exrc` from the cwd. This is
+-- what keeps repo-specific editor config (LSP heap sizes, lint rules that only
+-- one codebase has, format timeouts) inside that repo instead of in these
+-- dotfiles, which follow every machine. Neovim requires each file to be trusted
+-- once before it is sourced (`:trust`), so an untrusted repo cannot run code.
+vim.o.exrc = true
