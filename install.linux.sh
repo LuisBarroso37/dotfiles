@@ -27,6 +27,28 @@ if [ "$(uname -s)" = "Darwin" ]; then
   exit 1
 fi
 
+# Run as YOURSELF, never `sudo ./install.linux.sh`. Under sudo, $HOME becomes
+# /root, so every user-scoped step silently targets the wrong account:
+#   * stow links the whole repo into /root instead of your home;
+#   * chsh switches root's login shell, leaving yours on bash — so the install
+#     looks like it did nothing;
+#   * terminfo compiles into /root/.terminfo;
+#   * makepkg (and therefore yay/paru) refuse to run as root outright, so every
+#     AUR package fails.
+# The script escalates with sudo on its own for the package steps that need it.
+if [ "$(id -u)" -eq 0 ] && [ -z "${DOTFILES_ALLOW_ROOT:-}" ]; then
+  echo "!! Do not run this script with sudo or as root." >&2
+  echo "   \$HOME would be $HOME, so stow, chsh and terminfo would all target" >&2
+  echo "   the wrong account, and yay/makepkg refuse to run as root." >&2
+  echo "" >&2
+  echo "   Run it as your normal user instead:" >&2
+  echo "     ./install.linux.sh" >&2
+  echo "" >&2
+  echo "   (It calls sudo itself for the package installs.)" >&2
+  echo "   Genuinely provisioning a root account? DOTFILES_ALLOW_ROOT=1 overrides." >&2
+  exit 1
+fi
+
 # Anything this script has to move out of the way lands here rather than being
 # clobbered — a fresh machine usually ships a skeleton ~/.zshrc, and stow refuses
 # to overwrite it (which is what made a first run abort with "existing target").
