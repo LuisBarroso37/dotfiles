@@ -4,7 +4,19 @@ format = """$directory$character"""
 palette = "catppuccin_mocha"
 # move the rest of the prompt to the right
 right_format = """$all"""
-command_timeout = 1000
+# These are ceilings, not per-prompt costs: they only bite when something is
+# genuinely slow, and with the defaults large repos printed [WARN] lines instead
+# of the prompt segment.
+#
+# Measured 2026-08-01 with `starship timings` in the portal monorepo: only three
+# modules render there (git_status 89ms, nodejs 19ms, git_branch 14ms) — $all
+# does NOT shell out to every toolchain, it only runs modules whose detection
+# files are present. Replacing $all with an explicit module list was benchmarked
+# and made no difference (105ms vs 107ms warm, 8 runs each), so $all stays.
+# git_status in a large repo is the real cost and it is unavoidable here.
+command_timeout = 2000
+# Directory scan (used to decide which language modules apply). Default 30ms.
+scan_timeout = 100
 
 [character]
 vicmd_symbol = "[N] >>>"
@@ -15,7 +27,6 @@ format =  '[$symbol$branch(:$remote_branch)]($style)'
 
 [aws]
 format = '[$symbol(profile: "$profile" )(\(region: $region\) )]($style)'
-disabled = false
 style = 'bold blue'
 symbol = " "
 

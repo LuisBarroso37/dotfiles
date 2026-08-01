@@ -16,7 +16,7 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [lazygit](https://github.com/jesseduffield/lazygit) | `.config/lazygit/config.yml` | Terminal git UI |
 | [yazi](https://github.com/sxyazi/yazi) | `.config/yazi/` | Terminal file manager (`y` cd's into last dir on exit) |
 | [delta](https://github.com/dandavison/delta) | `.config/git/config` | Syntax-highlighting git diff pager |
-| [gh](https://cli.github.com) | — | GitHub CLI (used by `wtr` to detect merged PRs) |
+| [gh](https://cli.github.com) | — | GitHub CLI (PRs, issues, auth from the terminal) |
 | [zoxide](https://github.com/ajeetdsouza/zoxide) | — | Smarter `cd` |
 | [bat](https://github.com/sharkdp/bat) | — | Better `cat` |
 | [fzf](https://github.com/junegunn/fzf) | — | Fuzzy finder |
@@ -24,6 +24,8 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [ripgrep](https://github.com/BurntSushi/ripgrep) | — | Better `grep` |
 | [carapace](https://carapace.sh) | — | Multi-shell completion engine |
 | [mise](https://mise.jdx.dev) | `~/.config/mise/config.toml` (untracked) | Runtime version manager (node, go, java, …) |
+| [herdr](https://herdr.dev) | `.config/herdr/config.toml` | Agent workspace multiplexer (owns `Ctrl+a`; drives `wth`/`wthr`) |
+| [jq](https://jqlang.github.io/jq/) | — | JSON processor — **required** by the `wth`/`wthr` worktree helpers |
 
 ---
 
@@ -116,7 +118,22 @@ stow .                     # all ~/.config packages
 stow --target="$HOME" zsh  # zsh dotfiles → ~
 ```
 
-**Machine-specific shell config** — anything you *don't* want on every machine (language toolchains like Node/NVM, the Angular CLI, Java, Python/pyenv, Go, SDKMAN, Rust) lives in `~/.zshrc.local`, which the tracked `.zshrc` sources at the very end if it exists:
+**Two more packages are excluded from `stow .`**, because a symlink is the wrong
+shape for them:
+
+- `herdr/` — herdr writes runtime state (logs, sockets, `session.json`) into
+  `~/.config/herdr`, so that has to stay a real directory. `install.sh` links
+  only `config.toml` into it by hand. Left to stow, the whole restow aborts with
+  *"existing target is not owned by stow"* and **no other package gets restowed
+  either**.
+- `terminfo/` — terminfo sources are *compiled* into `~/.terminfo` with `tic`,
+  not symlinked. `install.sh` does that. It carries an `xterm-256color` variant
+  with `Smulx`/`Setulc` so Neovim emits undercurl (red squiggles on LSP
+  diagnostics) inside herdr panes, which force `TERM=xterm-256color`; `.zshrc`
+  switches `TERM` to it when it detects a herdr pane. Inside tmux the equivalent
+  fix is `terminal-features ',*:usstyle'` in `tmux.conf`.
+
+**Machine-specific shell config** — anything you *don't* want on every machine (the Angular CLI, Docker hosts, embedded toolchains, SDKMAN, and any runtime not managed by mise) lives in `~/.zshrc.local`, which the tracked `.zshrc` sources at the very end if it exists:
 
 ```sh
 [ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"
@@ -140,32 +157,3 @@ To add a new tool to the repo:
 2. Move the config there: `mv ~/.config/<tool>/ ~/dotfiles/<tool>/`
 3. Restow: `cd ~/dotfiles && stow .`
 
----
-
-## First-time migration (existing machine only)
-
-If you already have configs on your current machine and want to move them into this repo, run the migration script instead of the install script:
-
-```sh
-cd ~/dotfiles
-chmod +x migrate.sh
-./migrate.sh
-```
-
-This will:
-1. Move each existing config from `~/.config/<tool>/` into `~/dotfiles/<tool>/`
-2. Install Stow if missing
-3. Run `stow .` to put the symlinks in place
-
-After that, push to GitHub:
-
-```sh
-cd ~/dotfiles
-git init
-git add .
-git commit -m "initial dotfiles"
-git remote add origin git@github.com:<your-username>/dotfiles.git
-git push -u origin main
-```
-
-From this point on, any change you make to your configs is just a `git push` away from being synced everywhere.

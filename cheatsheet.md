@@ -2,37 +2,39 @@
 
 ## tmux
 
-> Prefix is `Ctrl+a` (remapped from default `Ctrl+b`).
+> Prefix is `Ctrl+b` (tmux's default). `Ctrl+a` belongs to **herdr** — tmux
+> deliberately yields it, because herdr has no send-prefix action and a tmux
+> session started inside a herdr pane would otherwise be unreachable.
 
 ### Splits & Panes
 
 | Action | Key |
 |--------|-----|
-| Split vertically (pane right) | `Ctrl+a \|` |
-| Split horizontally (pane below) | `Ctrl+a -` |
-| Switch pane | `Ctrl+a h/j/k/l` |
-| Close current pane (no prompt) | `Ctrl+a x` |
-| Zoom pane (toggle fullscreen) | `Ctrl+a z` |
-| Resize pane | `Ctrl+a H/J/K/L` (repeatable) |
+| Split vertically (pane right) | `Ctrl+b \|` |
+| Split horizontally (pane below) | `Ctrl+b -` |
+| Switch pane | `Ctrl+b h/j/k/l` |
+| Close current pane (no prompt) | `Ctrl+b x` |
+| Zoom pane (toggle fullscreen) | `Ctrl+b z` |
+| Resize pane | `Ctrl+b H/J/K/L` (repeatable) |
 
 ### Windows (tabs)
 
 | Action | Key |
 |--------|-----|
-| New window (in current path) | `Ctrl+a c` |
-| Next window | `Ctrl+a n` |
-| Previous window | `Ctrl+a p` |
-| Pick window by number | `Ctrl+a 1–9` |
-| Rename window | `Ctrl+a ,` |
-| Close window | `Ctrl+a &` |
+| New window (in current path) | `Ctrl+b c` |
+| Next window | `Ctrl+b n` |
+| Previous window | `Ctrl+b p` |
+| Pick window by number | `Ctrl+b 1–9` |
+| Rename window | `Ctrl+b ,` |
+| Close window | `Ctrl+b &` |
 
 ### Sessions
 
 | Action | Key |
 |--------|-----|
-| Open session picker (sesh + fzf) | `Ctrl+a T` |
+| Open session picker (sesh + fzf) | `Ctrl+b T` |
 | New session | `tmux new -s name` |
-| Detach | `Ctrl+a d` |
+| Detach | `Ctrl+b d` |
 | List sessions | `tmux ls` |
 | Attach to session | `tmux attach -t name` |
 
@@ -40,11 +42,13 @@
 
 ## Git worktrees (git + tmux + sesh)
 
-> Worktrees are **sibling directories** named `<repo>.<branch>` (e.g.
-> `portal.ICP-1234-desc` next to `portal`); each gets a tmux session named
-> `<repo>-<branch>` (e.g. `portal-ICP-1234-desc` — hyphens, since `.` breaks tmux
-> `-t` targets). Managed by the `wtc` / `wtr` zsh functions over plain `git worktree`.
-> `sesh` (`Ctrl+a T`) is the picker for hopping between them.
+> Worktrees are **nested directories** named `<parent>/<repo>/<branch-slug>` (e.g.
+> `into.care/portal/ICP-1234-desc`), where the slug is the branch with `/` → `-`.
+> Each gets a tmux session named `<repo>/<branch-slug>` (e.g.
+> `portal/ICP-1234-desc`) — slashes are safe because every `tmux -t` call uses the
+> `=` exact-match prefix. Managed by the `wtc` / `wtr` zsh functions over plain
+> `git worktree`; `wth` / `wthr` are the herdr-backed twins. `sesh` (`Ctrl+b T`)
+> is the picker for hopping between tmux sessions.
 
 ### Mental model
 
@@ -57,27 +61,43 @@
 | Action | Command |
 |--------|---------|
 | Start a ticket (create worktree + enter its session) | `wtc ICP-1234-desc` — run from anywhere inside the repo |
-| Hop between worktrees | `Ctrl+a T` (sesh picker) → attach to its session |
+| Hop between worktrees | `Ctrl+b T` (sesh picker) → attach to its session |
 | List worktrees | `git worktree list` |
 | Rebase current branch onto latest main | `wtrebase` — fetches, rebases onto `origin/<main>` (auto-stashes), and fast-forwards the main worktree too if it's clean & on main |
 | Remove a worktree (+ session, + branch if merged) | `wtr ICP-1234-desc` — from your **main** session, not from inside it |
 | Remove the worktree you're near | `wtr` (no arg → current branch) — must be run from **another** session |
+| Bulk-delete branches whose work already landed | `wtclean` |
 
 - ✅ `wtc` drops you straight into the new worktree's session (switches client if already in tmux, attaches if not).
-- ✅ `wtr` from your base (`main`) session; it kills the session and deletes the branch when it's merged. It tries a safe local delete first (`git branch -d`), and if that fails it asks GitHub whether the PR was **squash/rebase-merged** and force-deletes only then (`gh` required). Truly unmerged branches are always kept.
-- ❌ `wtr` while standing inside the worktree/session you're deleting — it refuses.
+- ✅ `wtr` from your base (`main`) session; it kills the session and deletes the branch with a safe `git branch -d`. Squash/rebase-merged branches have no ancestry to check, so `-d` refuses them and `wtr` keeps them — run `wtclean` to sweep those up. No GitHub API call is involved.
+- ✅ `wtclean` fetches with `--prune`, then offers two groups **separately**: branches merged into the default branch (safe `-d`), and branches whose upstream is gone after a squash/rebase merge (force `-D`, with the count of commits you'd drop shown first). Branches still checked out in a worktree are listed as "run `wtr` first" rather than failing.
+- ❌ `wtr` while standing inside the worktree/session you're deleting — it refuses, in tmux **and** outside it.
+
+### herdr variants
+
+`wth` / `wthr` mirror `wtc` / `wtr` against herdr workspaces instead of tmux
+sessions, using the same path convention. `wthr [branch] [--force]` — `--force`
+discards a dirty checkout. Both require `jq`.
 
 ### Daily workflow (from opening Ghostty)
 
-> **Mental model:** `sesh` / `Ctrl+a T` = pick a main clone + hop between anything · `wtc` = start/enter a ticket worktree · `wtr` = tear one down · `wtrebase` = stay on top of main. Sessions don't auto-restore (see note below) — you rebuild them deterministically with these commands.
+> **Mental model:** `sesh` / `Ctrl+b T` = pick a main clone + hop between anything · `wtc` = start/enter a ticket worktree · `wtr` = tear one down · `wtrebase` = stay on top of main. Sessions don't auto-restore (see note below) — you rebuild them deterministically with these commands.
 
-1. **Open Ghostty** → plain shell, no tmux yet. Jump into a project with **`Ctrl+a T`** → pick `portal` / `intocare` / `dotfiles` (or `sesh connect portal`). This starts tmux fresh and drops you in that repo's main-clone session. Keep main clones on `main`.
-2. **Start a ticket** — from anywhere inside the repo: `wtc ICP-1234-desc`. Creates (or reuses) the worktree and drops you into its `<repo>-ICP-1234-desc` session.
-3. **Hop around** — `Ctrl+a T` anytime to switch sessions; `Ctrl+a d` to detach (session keeps running).
+1. **Open Ghostty** → plain shell, no tmux yet. Jump into a project with **`Ctrl+b T`** → pick `portal` / `intocare` / `dotfiles` (or `sesh connect portal`). This starts tmux fresh and drops you in that repo's main-clone session. Keep main clones on `main`.
+2. **Start a ticket** — from anywhere inside the repo: `wtc ICP-1234-desc`. Creates (or reuses) the worktree and drops you into its `<repo>/ICP-1234-desc` session.
+3. **Hop around** — `Ctrl+b T` anytime to switch sessions; `Ctrl+b d` to detach (session keeps running).
 4. **Stay current** — from inside a ticket session: `wtrebase` (rebase onto `origin/main`, auto-stash, fast-forward main clone too).
 5. **Finish a ticket** — once merged, from a **different** session (e.g. your main clone, not from inside the worktree): `wtr ICP-1234-desc`. Removes worktree + session, deletes the branch only if merged.
 
-> **Session resurrection is off.** `tmux-continuum` still auto-saves every 15 min, but nothing reopens on server start — rebuild with `sesh`/`wtc` instead. Want a specific layout back? Save with `Ctrl+a Ctrl+s`, restore manually with `Ctrl+a Ctrl+r`.
+> **Session resurrection is ON.** `tmux-continuum` auto-saves every 15 min and
+> `@continuum-restore 'on'` (see `tmux/tmux.conf`) reopens the last save when the
+> tmux server starts fresh. Manual controls: save `Ctrl+b Ctrl+s`, restore
+> `Ctrl+b Ctrl+r`.
+>
+> Caveat: a session torn down by `wtr` is still in the last snapshot, so a fresh
+> server boot can resurrect it pointing at a directory that no longer exists
+> (tmux falls back to `$HOME`). Kill those, or turn restore off and rebuild with
+> `sesh` / `wtc`, which is deterministic.
 
 ---
 
