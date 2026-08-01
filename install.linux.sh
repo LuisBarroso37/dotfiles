@@ -98,14 +98,16 @@ else
 fi
 echo "   Using: $PM"
 
+# </dev/null throughout: output is redirected to the log, so anything that stops
+# to ask a question would hang with no visible prompt. Fail fast on EOF instead.
 pm_install() { # install one or more packages; returns non-zero if the PM fails
   case "$PM" in
-    apt)    $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
-    dnf)    $SUDO dnf install -y "$@" ;;
-    pacman) $SUDO pacman -S --needed --noconfirm "$@" ;;
-    zypper) $SUDO zypper --non-interactive install "$@" ;;
-    apk)    $SUDO apk add "$@" ;;
-    xbps)   $SUDO xbps-install -Sy "$@" ;;
+    apt)    $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" </dev/null ;;
+    dnf)    $SUDO dnf install -y "$@" </dev/null ;;
+    pacman) $SUDO pacman -S --needed --noconfirm "$@" </dev/null ;;
+    zypper) $SUDO zypper --non-interactive install "$@" </dev/null ;;
+    apk)    $SUDO apk add "$@" </dev/null ;;
+    xbps)   $SUDO xbps-install -Sy "$@" </dev/null ;;
   esac
 }
 
@@ -140,10 +142,13 @@ bin_name() { # the executable a tool provides, for "is it already here?" checks
 }
 
 aur_name() { # AUR package for the tools no distro repo carries
+  # Always the -bin variants. The from-source herdr pulls cargo + zig just to
+  # rebuild a binary upstream already ships, which turns a ~5s install into a
+  # multi-minute compile that reads as a hang behind the log redirect.
   case "$1" in
     carapace) echo "carapace-bin" ;;
     sesh)     echo "sesh-bin" ;;
-    herdr)    echo "herdr" ;;
+    herdr)    echo "herdr-bin" ;;
     *)        echo "$1" ;;
   esac
 }
@@ -186,9 +191,22 @@ fi
 
 # makepkg refuses to run as root, so AUR installs never take $SUDO — the helper
 # escalates internally for the pacman step.
+#
+# --noconfirm alone is NOT enough to make yay non-interactive: when a previous
+# run left files in /tmp/yay it still opens the "Packages to cleanBuild?" and
+# "Diffs to show?" menus, which block forever behind the log redirect with no
+# visible prompt. The --answer* flags pre-answer all four menus; </dev/null
+# below is the backstop, turning any prompt we haven't anticipated into an
+# immediate EOF failure rather than a hang.
 aur_install() {
   [ -n "$AUR" ] || return 1
-  "$AUR" -S --needed --noconfirm "$@"
+  case "$AUR" in
+    yay)  yay  -S --needed --noconfirm --removemake \
+              --answerclean=None --answerdiff=None \
+              --answeredit=None  --answerupgrade=None "$@" </dev/null ;;
+    paru) paru -S --needed --noconfirm --removemake --skipreview "$@" </dev/null ;;
+    *)    "$AUR" -S --needed --noconfirm "$@" </dev/null ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
