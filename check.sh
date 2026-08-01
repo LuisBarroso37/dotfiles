@@ -184,7 +184,15 @@ if command -v zsh >/dev/null 2>&1; then
   # it would be trained-to-ignore within a week. `script` merges stderr into the
   # pty stream, so this matches error patterns rather than asserting stderr is
   # empty; anything else unexpected is surfaced as a warning, not a failure.
-  zsh_out="$(guarded 30 in_pty zsh -i -c exit)"
+  # The timeout goes INSIDE the pty, not around it. `guarded 30 in_pty …` could
+  # never work: guarded execs timeout(1), an external binary, and in_pty is a
+  # shell function it cannot resolve — so timeout died with "failed to run
+  # command 'in_pty'" and C2 reported "zsh -i exited 127" no matter what .zshrc
+  # did, masking the real startup status. script(1) runs its command through sh,
+  # which resolves timeout fine.
+  pty_cmd=(zsh -i -c exit)
+  [ -n "$TIMEOUT_BIN" ] && pty_cmd=("$TIMEOUT_BIN" -k 5 30 "${pty_cmd[@]}")
+  zsh_out="$(in_pty "${pty_cmd[@]}")"
   zsh_rc=$?
   # Strip CRs, ANSI escapes, and the `^D` that script(1) echoes when the shell
   # reads EOF — all three are the harness talking, not the config.
