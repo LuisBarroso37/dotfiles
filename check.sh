@@ -83,27 +83,28 @@ in_pty() {
   fi
 }
 
-# A gate that can hang is a gate nobody runs — but the obvious guard is worse
-# than none here. Backgrounding `script` puts it in a background process group,
-# where touching the tty raises SIGTTIN and STOPS it: the process never exits, so
-# a poll-and-kill watchdog reports a hang on a config that is perfectly healthy.
-# (Observed: nvim "did not exit within 60s" backgrounded, exit 0 in the
-# foreground.) So the pty command always runs in the FOREGROUND, and the deadline
-# comes from timeout(1) as its parent when one is available. macOS ships none;
-# coreutils provides gtimeout. Without either, the probes still self-terminate —
-# the nvim probe quits itself, `zsh -i -c exit` exits on its own — so the only
-# thing lost is protection against a config that genuinely blocks on input.
+# A gate that can hang is a gate nobody runs, but bounding a pty probe took two
+# tries to get right and both failures are worth keeping written down.
+#
+# First: do NOT background `script` and poll it. Backgrounding puts it in a
+# background process group, where touching the tty raises SIGTTIN and STOPS the
+# process — it never exits, so a poll-and-kill watchdog reports a hang on a config
+# that is perfectly healthy. (Observed: nvim "did not exit within 60s"
+# backgrounded, exit 0 in the foreground.) The pty command always runs in the
+# FOREGROUND.
+#
+# Second: the timeout goes INSIDE the pty, not around it. A `guarded()` wrapper
+# that ran `timeout <secs> in_pty …` could never work — timeout(1) is an external
+# binary and execve's its argument, so a shell function is unresolvable and it
+# died with 127. That is not 124, so callers checking only for the timeout status
+# fell through to their success branch and passed a probe that never started. Each
+# probe therefore builds its own argv with the timeout as the innermost command;
+# `script` runs it through sh, which resolves a real binary fine.
+#
+# macOS ships no timeout; coreutils provides gtimeout. Without either, the probes
+# still self-terminate — the nvim probe quits itself, `zsh -i -c exit` exits on its
+# own — so the only thing lost is protection against a config that blocks on input.
 TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
-
-guarded() {
-  local secs="$1"; shift
-  if [ -n "$TIMEOUT_BIN" ]; then
-    # -k: SIGKILL 5s after the TERM, for a child that ignores TERM.
-    "$TIMEOUT_BIN" -k 5 "$secs" "$@"
-  else
-    "$@"
-  fi
-}
 
 # ---------------------------------------------------------------------------
 # Derived inventories — computed, never written down
@@ -274,12 +275,16 @@ if command -v nvim >/dev/null 2>&1; then
     # Under a pty so UIEnter/VeryLazy fire and lazy-loaded plugins actually
     # load. Errors are collected from :messages rather than stdout, because a
     # real terminal fills stdout with escape sequences.
+    # The sentinel first line is load-bearing: `:messages` is legitimately EMPTY on
+    # a healthy config, so an empty file cannot distinguish "nothing to report" from
+    # "the probe never ran". With the marker, presence proves the probe completed
+    # and its absence is a real failure.
     probe="$(mktemp)"; out="$(mktemp)"
     cat >"$probe" <<'LUA'
 vim.defer_fn(function()
   local msgs = vim.api.nvim_exec2("messages", { output = true }).output or ""
   local f = io.open(vim.env.NVIM_PROBE_OUT, "w")
-  f:write(msgs)
+  f:write("PROBE-COMPLETED\n" .. msgs)
   f:close()
   vim.cmd("qa!")
 end, 3000)
@@ -288,11 +293,22 @@ LUA
     # the config the user actually gets loads cleanly, so the probe has to load
     # it the same way they do.
     export NVIM_PROBE_OUT="$out"
-    guarded 60 in_pty nvim -S "$probe" >/dev/null 2>&1
+    # Timeout INSIDE the pty, for the same reason as C2's zsh probe: timeout(1) is
+    # an external binary and cannot execve a shell function, so wrapping `in_pty`
+    # in it died with 127 rather than running anything. This path is opt-in, so it
+    # outlived the C2 fix — and 127 is not 124, so it fell through to the success
+    # branch below and grepped an empty file: a clean "nvim loads without errors"
+    # for a probe that never started. An unexpected status is now a failure, not a
+    # pass.
+    nv_cmd=(nvim -S "$probe")
+    [ -n "$TIMEOUT_BIN" ] && nv_cmd=("$TIMEOUT_BIN" -k 5 60 "${nv_cmd[@]}")
+    in_pty "${nv_cmd[@]}" >/dev/null 2>&1
     nv_rc=$?
     unset NVIM_PROBE_OUT
     if [ "$nv_rc" -eq 124 ]; then
       fail "nvim did not exit within 60s (config may be prompting or hung)"
+    elif ! grep -q '^PROBE-COMPLETED$' "$out" 2>/dev/null; then
+      fail "nvim probe never completed (exit $nv_rc) — it did not reach its own exit path"
     else
       # E1568 is the pty answering no DSR query for the background colour — an
       # artefact of script(1), raised on a healthy config, so it is exempt. Any
