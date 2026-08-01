@@ -64,11 +64,16 @@ chmod +x install.sh
 
 **Linux** — `pacman`, `apt` or `dnf`, covering:
 
-| Package manager | Distros | Status |
+| Package manager | Distros | Verified against |
 | --- | --- | --- |
-| `pacman` | Arch, Manjaro, EndeavourOS, CachyOS | verified end-to-end |
-| `apt` | Debian, Ubuntu, Mint, Pop!\_OS | package names verified |
-| `dnf` | Fedora, RHEL, Rocky, AlmaLinux | package names verified |
+| `pacman` | Arch, Manjaro, EndeavourOS, CachyOS | `archlinux:latest` + real hardware |
+| `apt` | Debian, Ubuntu, Mint, Pop!\_OS | `debian:trixie` |
+| `dnf` | Fedora, RHEL, Rocky, AlmaLinux | `fedora:latest` |
+
+Each ran end-to-end as a non-root sudo user in a clean container and finished
+with every check passing. The derivatives are inferred from sharing the parent's
+package manager — only the named image was tested — and a container exercises no
+GUI, so Ghostty and the Nerd Font are confirmed to install but not to render.
 
 **64-bit only** — x86_64 and aarch64. A 32-bit userland (`armv7l`/`armhf`) gets no
 GitHub-release fallback at all, and eight of the tools are in no apt repo, herdr

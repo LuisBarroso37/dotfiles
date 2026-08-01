@@ -5,9 +5,9 @@ set -euo pipefail
 #
 # SUPPORTED — three package managers, and therefore these distro families:
 #
-#   pacman   Arch, Manjaro, EndeavourOS, CachyOS      fully verified (daily driver)
-#   apt      Debian, Ubuntu, Mint, Pop!_OS            package names verified
-#   dnf      Fedora, RHEL, Rocky, AlmaLinux           package names verified
+#   pacman   Arch, Manjaro, EndeavourOS, CachyOS      archlinux:latest + real hardware
+#   apt      Debian, Ubuntu, Mint, Pop!_OS            debian:trixie
+#   dnf      Fedora, RHEL, Rocky, AlmaLinux           fedora:latest
 #
 # 64-bit only — x86_64 and aarch64. Raspbian was listed on the apt line until it
 # was pointed out that a 32-bit userland (armv7l/armhf) gets no GitHub-release
@@ -16,9 +16,14 @@ set -euo pipefail
 # herdr among them, which .zshrc hard-depends on. 64-bit Raspberry Pi OS is
 # Debian and takes the apt path unchanged; the 32-bit image is not supported.
 #
-# "Verified" means the package names were checked against each distro's package
-# index and the GitHub release assets were fetched and run; it does NOT mean the
-# script has been executed end-to-end on Debian or Fedora. Only Arch has had that.
+# Each was run end-to-end as a non-root sudo user in a clean container of the
+# image named above, finishing with every verification check passing — not merely
+# eyeballed against a package index. Arch additionally runs on real hardware.
+#
+# Two honest limits on that claim. The derivatives listed in each row are inferred
+# from sharing the parent's package manager and repos; only the named image was
+# actually tested. And a container exercises no GUI, so ghostty and the Nerd Font
+# are confirmed to *install* but never to render.
 #
 # NOT supported, deliberately: zypper (openSUSE) and xbps (Void) were removed
 # rather than carried as untested guesses — a branch that claims support and then
@@ -77,6 +82,19 @@ LOG="${TMPDIR:-/tmp}/dotfiles-install.$$.log"
 
 MISSING=()     # tools no repo could provide → reported at the end with a recipe
 UNVERIFIED=()  # GitHub-release downloads no upstream checksum covered → also reported
+
+# GitHub allows 60 API requests/hour per unauthenticated IP, and the release
+# fallback spends one per unpackaged tool — so a Debian or Fedora run costs ~8,
+# and a few re-runs (or a shared/NAT'd address) exhausts it. A token lifts the
+# ceiling to 5000, so use one if the environment or an authenticated gh has it.
+GH_API_AUTH=()
+_gh_tok="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+if [ -z "$_gh_tok" ] && command -v gh >/dev/null 2>&1; then
+  _gh_tok="$(gh auth token 2>/dev/null || true)"
+fi
+[ -n "$_gh_tok" ] && GH_API_AUTH=(-H "Authorization: Bearer $_gh_tok")
+unset _gh_tok
+GH_RATE_LIMITED=0   # set when the API refuses us, so the report can say so
 
 # The GitHub-release fallback installs into ~/.local/bin. .zshrc already puts it
 # first on PATH for future shells, but this run needs it too — otherwise the
@@ -344,11 +362,29 @@ gh_release_install() {
     *)             return 1 ;;   # no prebuilt binaries for anything else
   esac
 
+  # Status captured alongside the body in one request. A 403/429 here is rate
+  # limiting, not a missing tool, and -f collapsed the two into the same silent
+  # failure — so an exhausted quota reported eight tools as unavailable and sent
+  # you hand-installing things that would have worked an hour later. Hit while
+  # testing this script in containers: 60 requests/hour goes quickly when each
+  # run costs one per unpackaged tool.
+  local resp code body
+  resp="$(curl -sSL -w '\n%{http_code}' \
+            ${GH_API_AUTH[@]+"${GH_API_AUTH[@]}"} \
+            "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null)" || return 1
+  code="${resp##*$'\n'}"
+  body="${resp%$'\n'*}"
+  case "$code" in
+    200)     : ;;
+    403|429) GH_RATE_LIMITED=1; return 1 ;;
+    *)       return 1 ;;
+  esac
+
   # Parsed with grep rather than jq: jq is itself one of the tools this may be
   # asked to install, so it cannot be a dependency of the installer.
-  urls="$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null \
+  urls="$(printf '%s' "$body" \
           | grep -o '"browser_download_url": *"[^"]*"' \
-          | sed 's/.*"\(https[^"]*\)"/\1/')" || return 1
+          | sed 's/.*"\(https[^"]*\)"/\1/')"
   [ -n "$urls" ] || return 1
 
   # Drop distro packages, installers, checksums and signatures — we want the
@@ -830,6 +866,17 @@ hint() {
     *)         echo "install manually" ;;
   esac
 }
+
+# Printed before the manual list, because it changes how to read it: these tools
+# may be perfectly installable, just not in this hour.
+if [ "$GH_RATE_LIMITED" -eq 1 ]; then
+  echo ""
+  echo "!! GitHub's API rate-limited us, so the release fallback could not run for"
+  echo "   some tools — anything below may well be installable, just not right now."
+  echo "   Either wait an hour and re-run, or raise the limit from 60/hour to 5000:"
+  echo "     gh auth login          # the script picks up 'gh auth token'"
+  echo "     GITHUB_TOKEN=… ./install.linux.sh"
+fi
 
 if [ ${#MISSING[@]} -gt 0 ]; then
   echo ""
