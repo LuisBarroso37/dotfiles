@@ -84,10 +84,18 @@ Both scripts will:
   shell config" below)
 - Initialise the catppuccin-tmux submodule and clone TPM (tmux plugin manager)
 - Create an empty `~/.config/sesh.local.toml` (sesh errors on a missing import)
+- Install the `gh-poi` extension, which `wtr`/`wthr` point you at for branch cleanup
+- Verify the result — every binary present, every config path resolving into the
+  repo — instead of just reporting on the package step
+
+Everything after the package step — submodules, stow, the herdr/terminfo
+hand-wiring, TPM, the sesh import file, and a final verification pass — is shared
+between the two and lives in **`install.common.sh`**, which both source. Only the
+platform-specific half (package manager, GUI apps, login shell) is per-script.
 
 Both also source an optional, untracked `install.local.sh` if you place one next
-to them — put per-machine package installs there (e.g. yazi's optional preview
-deps), so the tracked scripts stay portable.
+to them — put per-machine toolchains there (embedded SDKs, JDKs, client tooling),
+so the tracked scripts stay portable.
 
 ### 3. Restart your terminal
 
@@ -109,7 +117,7 @@ dotfiles/
   starship.toml  →  ~/.config/starship.toml
 ```
 
-The key: `stow .` treats the entire dotfiles directory as a single package. Each top-level folder gets folded into one symlink in `~/.config/`, rather than symlinking individual files. Files like `README.md` and `install.sh` are excluded via `.stowrc` ignore rules.
+The key: `stow .` treats the entire dotfiles directory as a single package. Each top-level folder gets folded into one symlink in `~/.config/`, rather than symlinking individual files. Files like `README.md`, `cheatsheet.md` and the `install*.sh` scripts are excluded via `.stowrc` ignore rules.
 
 **Zsh is a special case** — its dotfiles (`.zshrc`, `.zprofile`, `.zshenv`) live directly in `~`, not `~/.config/`. The `zsh/` package is excluded from `stow .` and stowed separately with an explicit target:
 
@@ -149,7 +157,9 @@ mise use -g node@lts go@latest java@corretto-25   # writes ~/.config/mise/config
 
 So a fresh clone starts **language-free** — no Node, Go, or Java is pinned by the repo. (Rust is the exception: it stays on rustup, and `.zshrc` just sources `~/.cargo/env` if present.)
 
-**Neovim is tuned for JS/TS/web.** The language-specific plugins (`vtsls`, `eslint`, `prettier` via conform, the JSON eslint-fix autocmd) are intentionally kept, but every one **self-gates** — prettier only runs when a prettier config resolves, eslint only when `node_modules/eslint` exists — so on a Rust/Go/etc. machine they're inert no-ops, not breakage.
+**Neovim is tuned for JS/TS/web.** The language-specific pieces (`vtsls`, the ESLint LSP, `prettier` via conform) are intentionally kept, but every one **self-gates** — prettier only runs when a prettier config file resolves from the buffer upward, and the ESLint LSP only attaches in a project it can find a config for — so on a Rust/Go/etc. machine they're inert no-ops, not breakage.
+
+Anything shaped by **one** codebase (LSP heap sizes, format timeouts, per-repo lint autocmds) lives in that repo's own `.nvim.lua`, loaded via `vim.o.exrc`, not here.
 
 To add a new tool to the repo:
 

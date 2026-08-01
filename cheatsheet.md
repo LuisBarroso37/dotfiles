@@ -33,10 +33,17 @@
 | Action | Key |
 |--------|-----|
 | Open session picker (sesh + fzf) | `Ctrl+b T` |
+| Switch to last session | `Ctrl+b S` |
 | New session | `tmux new -s name` |
 | Detach | `Ctrl+b d` |
 | List sessions | `tmux ls` |
 | Attach to session | `tmux attach -t name` |
+
+> `Ctrl+b S`, not the stock `Ctrl+b L` — `L` is rebound to "resize pane right".
+> Worth having with one session per worktree and `detach-on-destroy off`.
+>
+> Outside tmux, `s` (a zsh function) opens the same sesh picker with plain fzf,
+> so it works before a tmux server exists.
 
 ---
 
@@ -76,12 +83,24 @@
 ### herdr variants
 
 `wth` / `wthr` mirror `wtc` / `wtr` against herdr workspaces instead of tmux
-sessions, using the same path convention. `wthr [branch] [--force]` — `--force`
-discards a dirty checkout. Both require `jq`.
+sessions, using the same path convention. Both require `jq`. `--force` discards
+a dirty checkout and works on either side (`wtr --force`, `wthr --force`).
+
+herdr's own prefix is `Ctrl+a` (tmux deliberately yields it — see the top of
+this file):
+
+| Action | Key |
+|--------|-----|
+| Workspace picker | `Ctrl+a w` |
+| Previous / next workspace | `Ctrl+a k` / `Ctrl+a j` |
+| Previous / next agent | `Ctrl+a K` / `Ctrl+a J` |
+
+> Don't close a repo-parent workspace to tidy up — it cascades and closes every
+> linked-worktree workspace under it.
 
 ### Daily workflow (from opening Ghostty)
 
-> **Mental model:** `sesh` / `Ctrl+b T` = pick a main clone + hop between anything · `wtc` = start/enter a ticket worktree · `wtr` = tear one down · `wtrebase` = stay on top of main. Sessions don't auto-restore (see note below) — you rebuild them deterministically with these commands.
+> **Mental model:** `sesh` / `Ctrl+b T` = pick a main clone + hop between anything · `wtc` = start/enter a ticket worktree · `wtr` = tear one down · `wtrebase` = stay on top of main. Sessions do auto-restore across reboots (see the note at the end), but these commands rebuild any of them deterministically.
 
 1. **Open Ghostty** → plain shell, no tmux yet. Jump into a project with **`Ctrl+b T`** → pick `portal` / `intocare` / `dotfiles` (or `sesh connect portal`). This starts tmux fresh and drops you in that repo's main-clone session. Keep main clones on `main`.
 2. **Start a ticket** — from anywhere inside the repo: `wtc ICP-1234-desc`. Creates (or reuses) the worktree and drops you into its `<repo>/ICP-1234-desc` session.
@@ -94,10 +113,9 @@ discards a dirty checkout. Both require `jq`.
 > tmux server starts fresh. Manual controls: save `Ctrl+b Ctrl+s`, restore
 > `Ctrl+b Ctrl+r`.
 >
-> Caveat: a session torn down by `wtr` is still in the last snapshot, so a fresh
-> server boot can resurrect it pointing at a directory that no longer exists
-> (tmux falls back to `$HOME`). Kill those, or turn restore off and rebuild with
-> `sesh` / `wtc`, which is deterministic.
+> A session torn down by `wtr` does **not** come back: `wtr` re-runs resurrect's
+> `save.sh` after killing it, so the snapshot no longer lists a session pointing
+> at a deleted directory.
 
 ---
 
@@ -125,8 +143,10 @@ discards a dirty checkout. Both require `jq`.
 
 | Action | Key |
 |--------|-----|
-| Open file explorer (Neo-tree) | `<leader>e` |
+| Open file explorer tree (snacks) | `<leader>e` |
 | Focus file explorer | `<leader>E` |
+| mini.files browser (current file) | `<leader>fm` |
+| mini.files browser (cwd) | `<leader>fM` |
 | Find file (fuzzy) | `<leader><space>` or `<leader>ff` |
 | Recent files | `<leader>fr` |
 | Switch between open buffers | `<leader>,` |
@@ -140,7 +160,7 @@ discards a dirty checkout. Both require `jq`.
 |--------|---------------|
 | Search in current file | `/` then type |
 | Next / previous match | `n` / `N` |
-| Clear search highlight | `<leader>nh` or `Esc` |
+| Clear search highlight | `Esc` (or `<leader>ur` to also redraw) |
 | Search word under cursor (highlight all) | `*` |
 | Search text in project (grep) | `<leader>sg` |
 | Search word under cursor in project | `<leader>sw` |
@@ -258,7 +278,8 @@ Or delete all at once after `*`:
 | Action | Key |
 |--------|-----|
 | Command palette | `<leader>:` |
-| Open terminal | `<leader>ft` or `Ctrl+\`` |
+| Open terminal (root dir / cwd) | `<leader>ft` / `<leader>fT` |
+| Toggle terminal | `Ctrl+/` |
 | Toggle word wrap | `<leader>uw` |
 | Save | `:w` or `Ctrl+S` (works in normal, insert, visual) |
 | Quit | `:q` |
@@ -328,9 +349,9 @@ Or delete all at once after `*`:
 
 | Action | Key |
 |--------|-----|
-| Push | `P` |
 | Pull | `p` |
-| Force push | `shift+P` |
+| Push | `P` (offers force-push if the remote has diverged) |
+| Fetch | `f` |
 
 ---
 

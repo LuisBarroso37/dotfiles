@@ -51,9 +51,10 @@ return {
         scss = { "prettier" },
         yaml = { "prettier" },
         markdown = { "prettier" },
-        -- NOTE: prettier formats json whitespace here, but eslint's jsonc/sort-keys
-        -- autofix for **/{nl,fr}.json is applied separately in config/autocmds.lua —
-        -- the eslint LSP doesn't attach to json filetypes, so nothing else applies it.
+        -- NOTE: prettier only normalises json whitespace. The eslint LSP does not
+        -- attach to json filetypes, so any eslint autofix a project wants on JSON
+        -- (e.g. jsonc/sort-keys for i18n files) has to be its own autocmd in that
+        -- project's `.nvim.lua` — see `vim.o.exrc` in config/options.lua.
       },
       formatters = {
         prettier = {
