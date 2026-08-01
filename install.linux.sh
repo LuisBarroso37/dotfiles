@@ -87,14 +87,42 @@ UNVERIFIED=()  # GitHub-release downloads no upstream checksum covered → also 
 # fallback spends one per unpackaged tool — so a Debian or Fedora run costs ~8,
 # and a few re-runs (or a shared/NAT'd address) exhausts it. A token lifts the
 # ceiling to 5000, so use one if the environment or an authenticated gh has it.
-GH_API_AUTH=()
-_gh_tok="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-if [ -z "$_gh_tok" ] && command -v gh >/dev/null 2>&1; then
-  _gh_tok="$(gh auth token 2>/dev/null || true)"
+GH_API_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+if [ -z "$GH_API_TOKEN" ] && command -v gh >/dev/null 2>&1; then
+  GH_API_TOKEN="$(gh auth token 2>/dev/null || true)"
 fi
-[ -n "$_gh_tok" ] && GH_API_AUTH=(-H "Authorization: Bearer $_gh_tok")
-unset _gh_tok
+# The token is interpolated into a quoted curl-config line below, where a quote or
+# backslash would be interpreted. Real GitHub tokens are [A-Za-z0-9_] only, so this
+# rejects nothing legitimate and refuses to send anything it can't quote safely.
+case "$GH_API_TOKEN" in
+  "") ;;
+  *[!A-Za-z0-9_]*)
+    echo "!! ignoring a GitHub token containing unexpected characters" >&2
+    GH_API_TOKEN="" ;;
+esac
 GH_RATE_LIMITED=0   # set when the API refuses us, so the report can say so
+
+# One GET against the GitHub API, printing the body with the HTTP status on its own
+# final line. Returns whatever curl returns.
+#
+# The token goes in on STDIN via --config, never as `-H` on the command line. An
+# argument list is world-readable on Linux (/proc/<pid>/cmdline), so a token passed
+# as -H is exposed to every other local user for the lifetime of the request.
+#
+# The quotes around the header value are load-bearing, and not obviously so: with
+# an unquoted `header = Authorization: Bearer <token>` curl reads the file without
+# any complaint and sends no header at all. Measured against /rate_limit — quoted
+# reports the authenticated ceiling of 5000, unquoted reports 60, identical to
+# sending nothing. A silent downgrade back to the exact rate limiting this code
+# exists to avoid, with no error to notice.
+gh_api_get() {
+  if [ -n "$GH_API_TOKEN" ]; then
+    printf 'header = "Authorization: Bearer %s"\n' "$GH_API_TOKEN" \
+      | curl -sSL -w '\n%{http_code}' --config - "$1" 2>/dev/null
+  else
+    curl -sSL -w '\n%{http_code}' "$1" 2>/dev/null
+  fi
+}
 
 # The GitHub-release fallback installs into ~/.local/bin. .zshrc already puts it
 # first on PATH for future shells, but this run needs it too — otherwise the
@@ -349,9 +377,7 @@ gh_release_install() {
   # testing this script in containers: 60 requests/hour goes quickly when each
   # run costs one per unpackaged tool.
   local resp code body
-  resp="$(curl -sSL -w '\n%{http_code}' \
-            ${GH_API_AUTH[@]+"${GH_API_AUTH[@]}"} \
-            "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null)" || return 1
+  resp="$(gh_api_get "https://api.github.com/repos/$repo/releases/latest")" || return 1
   code="${resp##*$'\n'}"
   body="${resp%$'\n'*}"
   case "$code" in
