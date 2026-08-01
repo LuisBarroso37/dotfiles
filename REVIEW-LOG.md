@@ -215,6 +215,8 @@ lesson as P2-08 and F-01 arriving by a third route.
 | F-14 | The nvim pty probe failed 3/3 immediately after a batch of killed/orphaned nvim processes, then passed 8/8 from a clean state. Dirty prior TUI state, not a config fault. | ACCEPTED-RISK (2026-08-01) — the probe stays opt-in, and F-13's sentinel means a non-completion is now reported honestly instead of passing silently |
 | F-15 | The GitHub token is passed as `-H "Authorization: Bearer …"`, so it appears in the process argument list and is readable from `/proc/<pid>/cmdline` by other local users. Real mechanism, negligible impact on a single-user machine; `curl --config -` would keep it off argv. | OPEN (low) — recorded rather than fixed, because by this file's own improvement criteria the cost today is nil |
 
+| F-16 | **One unattributed gate failure.** `./check.sh --offline` reported `FAIL — 1 failure(s)` once, then passed 10 consecutive runs (4 with stdout to a file, 3 through a pipe, plus the full networked run before and after). The cause is unknown and stays unknown, because that run's output was read through `tail -3` and the `✗` line naming the check had already scrolled past. Not reproduced against either suspected trigger. | **Mitigated (2026-08-01), cause still unknown** — `check.sh` now restates the failed checks in its closing summary, so a truncated read still says what broke and a recurrence will be attributable. Reopen with the ✗ line if it happens again |
+
 **Review verdict on the three pushed commits: correct.** Each diagnosis matches the
 mechanism, each fix is minimal, and the empty-array expansion in `d134098`
 (`${GH_API_AUTH[@]+"${GH_API_AUTH[@]}"}`) is the right `set -u`-safe idiom. Dropping

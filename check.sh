@@ -63,11 +63,16 @@ fi
 FAILS=0
 WARNS=0
 SKIPS=0
+# Failure messages are also collected, so the closing summary can restate them.
+# The output of this script is routinely read through `| tail`, and a run whose
+# ✗ line scrolled out of view is a failure you cannot act on — that happened,
+# and cost the diagnosis of a one-in-ten flake that has not recurred since.
+FAILED_CHECKS=()
 
 criterion() { printf '\n%s%s%s\n' "$C_BOLD" "$1" "$C_OFF"; }
 ok()   { printf '  %s✓%s %s\n' "$C_OK" "$C_OFF" "$1"; }
 warn() { printf '  %s!%s %s\n' "$C_WARN" "$C_OFF" "$1"; WARNS=$((WARNS + 1)); }
-fail() { printf '  %s✗%s %s\n' "$C_FAIL" "$C_OFF" "$1"; FAILS=$((FAILS + 1)); }
+fail() { printf '  %s✗%s %s\n' "$C_FAIL" "$C_OFF" "$1"; FAILS=$((FAILS + 1)); FAILED_CHECKS+=("$1"); }
 skip() { printf '  %s- %s (skipped: %s)%s\n' "$C_DIM" "$1" "$2" "$C_OFF"; SKIPS=$((SKIPS + 1)); }
 detail() { [ "$VERBOSE" -eq 1 ] && printf '    %s%s%s\n' "$C_DIM" "$1" "$C_OFF"; return 0; }
 
@@ -670,5 +675,9 @@ if [ "$FAILS" -eq 0 ]; then
   exit 0
 else
   printf '%sFAIL%s — %d failure(s), %d warning(s), %d skipped\n' "$C_FAIL" "$C_OFF" "$FAILS" "$WARNS" "$SKIPS"
+  # Restated here so a run read through `| tail` still says what broke.
+  for _f in "${FAILED_CHECKS[@]}"; do
+    printf '  %s✗%s %s\n' "$C_FAIL" "$C_OFF" "$_f"
+  done
   exit 1
 fi
