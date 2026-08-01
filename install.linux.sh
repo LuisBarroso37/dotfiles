@@ -181,37 +181,17 @@ pkg_name() { # map a tool to this PM's package name (differences are the excepti
   esac
 }
 
-# Linux-only extension of install.common.sh's bin_name. wl-clipboard installs
-# wl-copy/wl-paste rather than anything called wl-clipboard, and both clipboard
-# providers are Linux-only concerns (macOS has pbcopy built in), so they have no
-# business in the mapping install.sh shares.
-tool_bin() {
-  case "$1" in
-    wl-clipboard) echo "wl-copy" ;;
-    *)            bin_name "$1" ;;
-  esac
-}
-
-# Binaries that ALSO count as "this tool is present", because the package really
-# did install the tool, just under another name:
-#   fd, bat      Debian renames the executables (fdfind, batcat) to avoid
-#                clashing with fdclone and bacula. Step 4 symlinks them back, but
-#                that runs after the install loop, so without this the loop would
-#                call both tools missing and fetch a second copy from GitHub.
-#   imagemagick  apt's `imagemagick` is still ImageMagick 6 on Debian ≤ 12 and
-#                Ubuntu ≤ 24.04, and IM6 has NO `magick` binary whatsoever — only
-#                convert-im6.q16 and friends, reachable as `convert`. Testing for
-#                `magick` alone meant apt exited 0 while every check here still
-#                considered the tool absent. See tool_note: convert is accepted as
-#                evidence the package landed, but it is NOT treated as equivalent.
-alt_bins() {
-  case "$1" in
-    fd)          echo "fdfind" ;;
-    bat)         echo "batcat" ;;
-    imagemagick) echo "convert" ;;
-    *)           : ;;
-  esac
-}
+# Binary-name knowledge lives in install.common.sh's tool_bins table, not here.
+# This file used to carry two more mappings of its own — tool_bin (wl-clipboard →
+# wl-copy) and alt_bins (Debian's fdfind/batcat, ImageMagick 6's convert) — which
+# meant the same question, "which binaries prove this tool is installed?", was
+# answered in two files that could drift apart. Both are now folded into tool_bins,
+# with bin_name giving the primary name and have_tool accepting any of them.
+#
+# The packaging facts those two encoded are preserved in tool_bins' comment: Debian
+# renames fd/bat, and apt's imagemagick is IM6 with convert but no magick. Note the
+# asymmetry that survives here: convert counts as evidence the package landed, but
+# it is NOT equivalent — see tool_note, which says so on the ✓ line.
 
 # A caveat appended to the ✓ line when what we found is not the whole tool. yazi's
 # HEIC/AVIF/JXL preview command is literally `magick`, so an IM6 machine must be
@@ -338,11 +318,11 @@ gh_release_repo() {
 }
 
 # Binaries to lift out of the archive. Only tools shipping more than one (or
-# under a name that isn't tool_bin) need an entry.
+# under a name that isn't bin_name) need an entry.
 gh_release_bins() {
   case "$1" in
     yazi) echo "yazi ya" ;;   # ya is the plugin/package manager half
-    *)    tool_bin "$1" ;;
+    *)    bin_name "$1" ;;
   esac
 }
 
@@ -508,7 +488,7 @@ gh_release_install() {
         return 1
       fi
       unzip -oq "$tmp/asset" -d "$tmp" ;;
-    *)              mv "$tmp/asset" "$tmp/$(tool_bin "$tool")" ;;  # bare binary
+    *)              mv "$tmp/asset" "$tmp/$(bin_name "$tool")" ;;  # bare binary
   esac
 
   if [ "$tool" = neovim ]; then
@@ -571,7 +551,7 @@ min_version() {
 # have a floor, so no assumption is made about tools that don't take --version.
 tool_version() {
   local bin out
-  bin="$(tool_bin "$1")"
+  bin="$(bin_name "$1")"
   command -v "$bin" >/dev/null 2>&1 || return 1
   out="$("$bin" --version 2>/dev/null | head -1)" || return 1
   out="$(printf '%s\n' "$out" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)"
@@ -601,19 +581,13 @@ version_ge() {
 # The question install_tool actually needs answered: is this tool present under a
 # name we accept, AND new enough to be worth reporting as installed?
 tool_ok() {
-  local tool="$1" bin alt floor ver
+  local tool="$1" floor ver
   # bash caches command→path lookups, and this is called immediately after a
   # release install drops a NEWER copy into ~/.local/bin. Without clearing the
   # table, `command -v nvim` and `nvim --version` keep answering for the /usr/bin
   # build we just replaced, and the version floor below never lets go.
   hash -r 2>/dev/null || true
-  bin="$(tool_bin "$tool")"
-  if ! command -v "$bin" >/dev/null 2>&1; then
-    for alt in $(alt_bins "$tool"); do
-      command -v "$alt" >/dev/null 2>&1 && return 0
-    done
-    return 1
-  fi
+  have_tool "$tool" || return 1
   floor="$(min_version "$tool")"
   [ -n "$floor" ] || return 0
   # An unparseable --version is not evidence of an old tool, so don't block on it.
@@ -627,7 +601,7 @@ tool_ok() {
 install_tool() {
   local tool="$1" pkg bin floor
   pkg="$(pkg_name "$tool")"
-  bin="$(tool_bin "$tool")"
+  bin="$(bin_name "$tool")"
   floor="$(min_version "$tool")"
   printf '   %-13s ' "$tool"
 
@@ -653,7 +627,7 @@ install_tool() {
 
   # Every arm re-checks with tool_ok rather than trusting the package manager's
   # exit status: apt happily exits 0 for a package that installs no binary we can
-  # find (see alt_bins on ImageMagick 6), and pm_install cannot know about a
+  # find (see tool_bins on ImageMagick 6), and pm_install cannot know about a
   # version floor. $pkg is deliberately unquoted — pkg_name may return two
   # packages (ncurses on apt) and both have to reach the PM as separate arguments.
   # shellcheck disable=SC2086  # deliberate word splitting of the package list

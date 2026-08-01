@@ -63,39 +63,53 @@ fi
 # verify_install that reads this simply has nothing to iterate over there.
 : "${FAILED_PKGS:=}"
 
-# The executable a tool provides, for "is it already here?" checks. Only the
-# cases where the binary name differs from the tool name need an entry.
+# EVERY binary name a tool may answer to, primary first, space separated. This is
+# the single table of binary-name knowledge for both installers; bin_name and
+# have_tool below are two views of it, so a new tool is added in exactly one place.
 #
-# Returns ONE name, because install.linux.sh consumes it as a literal filename —
-# gh_release_bins extracts it out of a release archive. Tools that resolve under
-# more than one name belong in have_tool below, not here.
-bin_name() {
+# More than one name is the normal case, not an exception, and each entry below is
+# a packaging fact that cost a silent failure to learn:
+#   * Homebrew's sevenzip installs only 7zz; the Linux packages provide 7z. yazi's
+#     archive previewer itself resolves `try("7zz") or try("7z")`, so either means
+#     previews work.
+#   * apt's imagemagick is ImageMagick 6, which has convert but NO magick at all.
+#   * Debian renames fd → fdfind and bat → batcat to avoid collisions (the Linux
+#     installer symlinks them back, but the check must pass before that runs).
+#   * wl-clipboard is a package that installs no binary of its own name.
+# Tools whose binary matches their package name need no entry.
+tool_bins() {
   case "$1" in
-    neovim)      echo "nvim" ;;
-    ripgrep)     echo "rg" ;;
-    git-delta)   echo "delta" ;;
-    sevenzip)    echo "7z" ;;     # Linux packages ship 7z; macOS ships 7zz, see have_tool
-    poppler)     echo "pdftoppm" ;;
-    imagemagick) echo "magick" ;;
-    ncurses)     echo "tic" ;;
-    fontconfig)  echo "fc-cache" ;;
-    *)           echo "$1" ;;
+    neovim)       echo "nvim" ;;
+    ripgrep)      echo "rg" ;;
+    git-delta)    echo "delta" ;;
+    sevenzip)     echo "7zz 7z" ;;
+    poppler)      echo "pdftoppm" ;;
+    imagemagick)  echo "magick convert" ;;
+    ncurses)      echo "tic" ;;
+    fontconfig)   echo "fc-cache" ;;
+    fd)           echo "fd fdfind" ;;
+    bat)          echo "bat batcat" ;;
+    wl-clipboard) echo "wl-copy" ;;
+    *)            echo "$1" ;;
   esac
 }
 
-# Is a tool usable on this machine? Wraps bin_name for the tools that answer to
-# different binaries per platform, where a single mapping is wrong somewhere.
-#
-# sevenzip is the case that forced this: Homebrew's formula installs only 7zz
-# (/opt/homebrew/opt/sevenzip/bin/7zz — there is no 7z), while the Linux packages
-# provide 7z. Checking either name is not a fudge, it is what the consumer does:
-# yazi's archive previewer resolves `try("7zz") or try("7z")`, so either binary
-# means archive previews work.
+# The PRIMARY binary — exactly one name, because install.linux.sh consumes it as a
+# literal filename when it extracts a bare binary out of a release archive, and as
+# the thing to ask `--version`.
+bin_name() {
+  local names; names="$(tool_bins "$1")"
+  printf '%s\n' "${names%% *}"
+}
+
+# Is a tool usable on this machine? True if ANY of its names resolves. Callers that
+# need to know which one resolved should ask; nothing currently does.
 have_tool() {
-  case "$1" in
-    sevenzip) command -v 7zz >/dev/null 2>&1 || command -v 7z >/dev/null 2>&1 ;;
-    *)        command -v "$(bin_name "$1")" >/dev/null 2>&1 ;;
-  esac
+  local b
+  for b in $(tool_bins "$1"); do
+    command -v "$b" >/dev/null 2>&1 && return 0
+  done
+  return 1
 }
 
 # Stow refuses to overwrite a real file it doesn't own, and a fresh account often
