@@ -2,9 +2,17 @@
 -- from the file upward, so a .json/.yaml/.md/… file in a non-JS project (Rust,
 -- Go, …) is NOT reformatted by an unrelated prettier. This gate applies to every
 -- filetype below and mirrors the root check the old pass-1 format autocmd had.
+--
+-- Deliberately NOT using lazyvim.plugins.extras.formatting.prettier: its
+-- `vim.g.lazyvim_prettier_needs_config` gate shells out to `prettier
+-- --find-config-path`, and prettier is not installed globally here (it comes
+-- from each project's node_modules/.bin). That check would fail with "command
+-- not found", report "no config", and silently disable prettier everywhere.
+-- A filesystem lookup needs no binary and spawns no process.
 local PRETTIER_CONFIGS = {
   ".prettierrc",
   ".prettierrc.json",
+  ".prettierrc.json5",
   ".prettierrc.js",
   ".prettierrc.cjs",
   ".prettierrc.mjs",
@@ -12,10 +20,14 @@ local PRETTIER_CONFIGS = {
   ".prettierrc.yml",
   ".prettierrc.toml",
   ".prettierrc.ts",
+  ".prettierrc.mts",
+  ".prettierrc.cts",
   "prettier.config.js",
   "prettier.config.cjs",
   "prettier.config.mjs",
   "prettier.config.ts",
+  "prettier.config.mts",
+  "prettier.config.cts",
 }
 
 return {

@@ -1,11 +1,9 @@
 return {
   "nvim-mini/mini.files",
   dependencies = { "nvim-mini/mini.icons" },
-  opts = {
-    options = {
-      use_as_default_explorer = false,
-    },
-  },
+  -- No `use_as_default_explorer` override: LazyVim's mini-files extra already
+  -- sets it false, and directory buffers are the snacks explorer's job. mini.files
+  -- is deliberately manual-only, on <leader>fm / <leader>fM.
   keys = {
     {
       "<leader>fm",

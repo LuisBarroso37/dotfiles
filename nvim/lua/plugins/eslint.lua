@@ -3,6 +3,13 @@ return {
   opts = {
     servers = {
       eslint = {
+        -- Same memory headroom vtsls gets. A flat config that pulls in
+        -- @typescript-eslint's type-aware rules makes the eslint server build a
+        -- full TS program for the project; on a large Angular app that GC-thrashes
+        -- (and eventually times out) at node's default heap size.
+        cmd_env = {
+          NODE_OPTIONS = "--max-old-space-size=8192",
+        },
         -- General fix for monorepos: the default root_dir stops at the nearest
         -- eslint.config.js, but in a workspace dependencies are hoisted, so that
         -- per-package folder has no local eslint install. The server then emits
@@ -76,7 +83,12 @@ return {
             formatters = {}, -- no CLI formatters; eslint LSP only
             lsp_format = "prefer", -- run the LSP even though prettier exists
             name = "eslint", -- restrict LSP formatting to the eslint client
-            timeout_ms = 3000,
+            -- The first fixAll after the server starts pays for the whole flat-config
+            -- resolution plus the initial TS program build, which blows well past a
+            -- few seconds on a large project — that's the "eslint LSP timeout" on the
+            -- first save in a session. Steady-state saves land in well under a second,
+            -- so the higher ceiling costs nothing after warm-up.
+            timeout_ms = 10000,
           })
         end
         LazyVim.format.register(formatter)

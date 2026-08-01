@@ -6,24 +6,9 @@ vim.opt.smoothscroll = false -- LazyVim enables this but it breaks <C-d>zz / <C-
 -- NOTE: snacks.scroll (LazyVim default) breaks the same centering via its scroll
 -- animation -- disabled in lua/plugins/snacks.lua.
 
--- Disable netrw. Nothing auto-replaces it (snacks explorer is disabled; mini.files
--- is opened manually). Without this, `nvim .` would open the netrw directory listing.
-vim.g.loaded_netrw = 1
-vim.g.loaded_netrwPlugin = 1
-
--- When `nvim .` (or any single directory arg) is invoked, cd to the directory and
--- show the dashboard instead. Must live here (not autocmds.lua) because autocmds.lua
--- is loaded on VeryLazy — after VimEnter has already fired.
-vim.api.nvim_create_autocmd("VimEnter", {
-  once = true,
-  callback = function()
-    if vim.fn.argc(-1) ~= 1 then return end
-    local arg = vim.fn.argv(0) --[[@as string]]
-    if arg == "" or vim.fn.isdirectory(arg) ~= 1 then return end
-    vim.cmd("cd " .. vim.fn.fnameescape(arg))
-    vim.api.nvim_win_set_buf(0, vim.api.nvim_create_buf(false, true))
-    vim.schedule(function()
-      require("snacks").dashboard()
-    end)
-  end,
-})
+-- netrw is left alone, and `nvim .` is left to the snacks explorer's directory
+-- hijack (the LazyVim default). The previous netrw disable + UIEnter dashboard
+-- reconstruction existed only because snacks' hijack had been switched off; with
+-- the explorer enabled in lua/plugins/snacks.lua, both are unnecessary.
+--   nvim    -> dashboard
+--   nvim .  -> snacks explorer tree

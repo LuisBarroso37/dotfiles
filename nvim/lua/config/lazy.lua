@@ -18,9 +18,11 @@ require("lazy").setup({
   spec = {
     -- add LazyVim and import its plugins
     { "LazyVim/LazyVim", import = "lazyvim.plugins", opts = { colorscheme = "catppuccin-mocha" } },
-    -- swap neo-tree for mini.files
+    -- Explorer setup: snacks explorer is the tree (<leader>e), mini.files the
+    -- manual picker (<leader>fm). Both extras are declared in lazyvim.json so
+    -- :LazyExtras reflects reality — importing one here instead bypassed
+    -- LazyVim's bookkeeping and showed mini-files as "not enabled".
     { "nvim-neo-tree/neo-tree.nvim", enabled = false },
-    { import = "lazyvim.plugins.extras.editor.mini-files" },
     -- disable LazyVim's default colorscheme
     { "folke/tokyonight.nvim", enabled = false },
     -- catppuccin colorscheme
