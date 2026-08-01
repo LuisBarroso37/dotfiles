@@ -138,6 +138,59 @@ _wt_drop_branch() {
   fi
 }
 
+# Keep nested worktrees out of the main checkout's `git status`.
+#
+# wtc/wth place worktrees at <parent>/<repo>/<slug> — i.e. INSIDE the main
+# checkout — so git reports each one as untracked, and `git add -A` there would
+# stage a bogus gitlink. Nesting is deliberate (it is what lets Neovim's 'exrc'
+# find the repo's .nvim.lua from inside a worktree), so the directories have to be
+# ignored instead of moved.
+#
+# The list is regenerated from `git worktree list` rather than appended to, so it
+# needs no manual upkeep: it is idempotent, drops entries when worktrees go away,
+# and picks up worktrees made with a raw `git worktree add`. Everything is confined
+# to a marked block, so the rest of info/exclude is untouched. info/exclude lives
+# in the *common* git dir, so one block covers every worktree of the repo.
+_wt_sync_excludes() {
+  local common main ex
+  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
+  main="${common%/.git}"
+  ex="$common/info/exclude"
+  mkdir -p "$common/info" 2>/dev/null || return 0
+
+  local begin="# >>> nested worktrees (managed by wtc/wth — do not edit) >>>"
+  local end="# <<< nested worktrees <<<"
+
+  local -a entries=()
+  local wt rel
+  while IFS= read -r wt; do
+    [[ "$wt" == "$main" ]] && continue
+    rel="${wt#$main/}"
+    [[ "$rel" == "$wt" ]] && continue          # not nested under the main checkout
+    entries+=("/${rel%%/*}/")                  # top-level dir only, anchored
+  done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
+  entries=("${(@u)entries}")
+
+  local tmp="${ex}.wt.$$"
+  if [[ -f "$ex" ]]; then
+    awk -v b="$begin" -v e="$end" '
+      $0 == b { skip = 1 }
+      !skip   { print }
+      $0 == e { skip = 0 }
+    ' "$ex" > "$tmp" || { rm -f "$tmp"; return 0; }
+  else
+    : > "$tmp"
+  fi
+  if (( ${#entries} )); then
+    {
+      print -r -- "$begin"
+      printf '%s\n' "${entries[@]}"
+      print -r -- "$end"
+    } >> "$tmp"
+  fi
+  mv -f "$tmp" "$ex" 2>/dev/null || rm -f "$tmp"
+}
+
 # Re-save the tmux-resurrect snapshot. Called after a session is killed: the last
 # snapshot still lists it, so a fresh tmux server would resurrect a session whose
 # directory is gone (tmux silently falls back to $HOME) and it would linger in
@@ -168,6 +221,7 @@ wtc() {
       || git worktree add "$dir" "$branch" \
       || { echo "wtc: could not create worktree at $dir" >&2; return 1; }
   fi
+  _wt_sync_excludes
   tmux has-session -t "=$session" 2>/dev/null \
     || tmux new-session -d -s "$session" -c "$dir"
   if [[ -n "$TMUX" ]]; then
@@ -215,6 +269,7 @@ wtr() {
     return 1
   fi
   git worktree remove "$dir" || return 1
+  _wt_sync_excludes
   _wt_drop_branch "$branch"
   tmux kill-session -t "=$session" 2>/dev/null
   # Overwrite the resurrect snapshot now that the session is gone, so a fresh
@@ -304,6 +359,7 @@ wth() {
       return 1
     fi
   fi
+  _wt_sync_excludes
   herdr workspace focus "$workspace_id" >/dev/null
 }
 
@@ -347,6 +403,7 @@ wthr() {
     return 1
   fi
   herdr worktree remove --workspace "$workspace_id" "${flags[@]}" || return 1
+  _wt_sync_excludes
   _wt_drop_branch "$branch"
   return 0
 }
