@@ -80,11 +80,22 @@ detail() { [ "$VERBOSE" -eq 1 ] && printf '    %s%s%s\n' "$C_DIM" "$1" "$C_OFF";
 # headless run reports plugins as unloaded on a perfectly healthy config — the
 # probe has to look like a terminal or it answers a different question than the
 # one asked. The two `script` invocations are not compatible between platforms.
+# stdin is redirected from /dev/null, and that is the whole ballgame on macOS:
+# script(1) calls tcgetattr on its OWN stdin before it runs anything, so when it
+# inherits something that isn't a terminal-like fd — a socket, as happens under an
+# agent harness, cron, or some CI runners — it dies with
+#   script: tcgetattr/ioctl: Operation not supported on socket
+# and exits 1 having never started the command. The probe then looked like the
+# thing it was probing had failed: C2 reported "zsh -i exited 1" on a healthy
+# shell, and the nvim probe silently produced no output. Both presented as
+# intermittent, because whether stdin happened to be a socket varied per
+# invocation — /dev/null and pipes both work fine, which is why most runs passed.
+# Pinning stdin makes the probes independent of however they were invoked.
 in_pty() {
   if [ "$(uname -s)" = "Darwin" ]; then
-    script -q /dev/null "$@" 2>&1
+    script -q /dev/null "$@" </dev/null 2>&1
   else
-    script -qec "$*" /dev/null 2>&1
+    script -qec "$*" /dev/null </dev/null 2>&1
   fi
 }
 
