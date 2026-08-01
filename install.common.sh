@@ -15,8 +15,41 @@
 #   DOTFILES   absolute path to the repo (resolved from the script's own location)
 # Optional:
 #   LOG        path to a package-manager log, mentioned in the closing message
+#
+# Sourcing this file runs the root check below immediately, so source it early —
+# after the caller's platform guard, before anything that touches $HOME.
+
+# Run as YOURSELF, never `sudo ./install*.sh`. Under sudo $HOME becomes /root, so
+# every user-scoped step in this file silently targets the wrong account:
+#   * stow links the whole repo into /root instead of your home;
+#   * terminfo compiles into /root/.terminfo;
+#   * the gh extension and the conflict backup dir land in root's home.
+# On Linux additionally: chsh switches root's login shell while yours stays on
+# bash (so the install looks like it did nothing), and makepkg — therefore
+# yay/paru — refuses to run as root outright, failing every AUR package.
+#
+# This lives here rather than in the callers on purpose. The steps it protects
+# are all in this file, so a guard in one installer left the other reaching the
+# same code unguarded; on macOS that was covered only incidentally, by Homebrew
+# refusing to run as root and dying first. Both installers escalate with sudo on
+# their own for the package steps that genuinely need it.
+if [ "$(id -u)" -eq 0 ] && [ -z "${DOTFILES_ALLOW_ROOT:-}" ]; then
+  _self="$(basename -- "${0:-install.sh}")"
+  echo "!! Do not run this script with sudo or as root." >&2
+  echo "   \$HOME would be $HOME, so stow, terminfo and the backup directory" >&2
+  echo "   would all target the wrong account." >&2
+  echo "" >&2
+  echo "   Run it as your normal user instead:" >&2
+  echo "     ./$_self" >&2
+  echo "" >&2
+  echo "   (It calls sudo itself for the package installs.)" >&2
+  echo "   Genuinely provisioning a root account? DOTFILES_ALLOW_ROOT=1 overrides." >&2
+  unset _self
+  exit 1
+fi
 
 # Where anything stow refuses to overwrite gets moved instead of clobbered.
+# Derived from $HOME, so it must come after the root check above.
 : "${BACKUP:=$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)}"
 
 # Optional platform-specific first entry in the closing "Next:" list.

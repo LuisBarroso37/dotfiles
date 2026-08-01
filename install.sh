@@ -14,6 +14,8 @@ fi
 
 # Everything after the package step (submodules, stow, herdr, terminfo, TPM,
 # sesh file, verification) is identical on both platforms and lives here.
+# Sourced before anything touches $HOME: it runs the refuse-to-run-as-root check
+# at source time and derives $BACKUP from $HOME.
 # shellcheck source=install.common.sh
 source "$DOTFILES/install.common.sh"
 
