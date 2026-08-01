@@ -227,6 +227,33 @@ _wt_resurrect_save() {
   "$save" quiet >/dev/null 2>&1 || true
 }
 
+# Refuse to remove the worktree the caller is standing in, or whose tmux session
+# is the current one. Both halves matter for different hosts: the cwd check covers
+# herdr panes and bare terminals (where $TMUX is unset), the session check covers
+# tmux.
+#
+# This lives in a shared helper because it did not start that way. wtr grew both
+# guards; wthr had NEITHER, so from a herdr pane whose cwd was the worktree,
+# `wthr --force` resolved the branch from the current shell, passed the
+# default-branch guard, and handed the id straight to `herdr worktree remove
+# --force` — deleting the checkout under the user's feet, discarding uncommitted
+# changes with no confirmation, and leaving the shell in a deleted directory.
+# cheatsheet.md meanwhile promised the two commands were symmetric.
+_wt_refuse_self() {
+  local dir="$1" session="$2" who="$3"
+  local here; here="$(git rev-parse --show-toplevel 2>/dev/null)"
+  if [[ -n "$here" && "${here:A}" == "${dir:A}" ]]; then
+    echo "$who: you are inside $dir — cd out first." >&2
+    return 1
+  fi
+  if [[ -n "$TMUX" && "$(tmux display-message -p '#{session_name}' 2>/dev/null)" == "$session" ]]; then
+    echo "$who: refusing — '$session' is the session you're in." >&2
+    echo "     Run it from another session (e.g. your main worktree)." >&2
+    return 1
+  fi
+  return 0
+}
+
 # Create (or switch to) a worktree for <branch> and jump into its tmux session.
 # Directory convention (matches herdr): <parent>/<repo>/<branch-slug>
 # Session name: <repo>/<branch-slug>  (= prefix gives tmux exact-match, slashes are safe)
@@ -281,19 +308,7 @@ wtr() {
     echo "wtr: no worktree is checked out on '$branch'." >&2
     return 1
   fi
-  # Standing inside the worktree being removed leaves the shell in a deleted cwd.
-  # The tmux check below only covers tmux; this covers herdr panes and bare
-  # terminals too, where $TMUX is unset and there was no guard at all.
-  local here; here="$(git rev-parse --show-toplevel 2>/dev/null)"
-  if [[ -n "$here" && "${here:A}" == "${dir:A}" ]]; then
-    echo "wtr: you are inside $dir — cd out first." >&2
-    return 1
-  fi
-  if [[ -n "$TMUX" && "$(tmux display-message -p '#{session_name}')" == "$session" ]]; then
-    echo "wtr: refusing — '$session' is the session you're in." >&2
-    echo "     Run it from another session (e.g. your main worktree)." >&2
-    return 1
-  fi
+  _wt_refuse_self "$dir" "$session" wtr || return 1
   git worktree remove "${flags[@]}" "$dir" || return 1
   _wt_sync_excludes
   _wt_drop_branch "$branch"
@@ -425,6 +440,7 @@ wthr() {
     echo "wthr: no open herdr workspace found for '$wt_session' ($dir)" >&2
     return 1
   fi
+  _wt_refuse_self "$dir" "$wt_session" wthr || return 1
   herdr worktree remove --workspace "$workspace_id" "${flags[@]}" || return 1
   _wt_sync_excludes
   _wt_drop_branch "$branch"
