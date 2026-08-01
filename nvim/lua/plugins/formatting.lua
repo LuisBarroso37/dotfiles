@@ -68,4 +68,38 @@ return {
       },
     },
   },
+
+  -- Stop the prettier gate above from falling through to the LSP formatter.
+  --
+  -- Gating prettier does not gate FORMATTING. LazyVim's format.resolve computes
+  -- `active = #sources > 0 and (not primary or not have_primary)`, so when the
+  -- prettier condition fails conform reports no sources, `have_primary` stays
+  -- false, and the next formatter in priority order — LazyVim's own "LSP"
+  -- formatter (primary, priority 1) — becomes active instead. LazyVim's json
+  -- extra turns jsonls' formatter on, so in a non-JS project a stray `:w` in any
+  -- .json file was rewritten wholesale by jsonls (measured: this repo's
+  -- lazy-lock.json went 40 -> 154 lines). Taking jsonls' formatting capability
+  -- away leaves zero sources, so nothing formats JSON unless prettier's gate
+  -- passes — which is the whole intent of the gate.
+  --
+  -- Both capabilities have to go: format.resolve's `sources` accepts a client
+  -- that supports textDocument/formatting OR textDocument/rangeFormatting, and
+  -- jsonls advertises both, so clearing only the first would leave it active.
+  --
+  -- Scope is JSON alone: no yaml-language-server is installed, and marksman
+  -- reports documentFormattingProvider = false, so markdown/yaml never had a
+  -- fall-through to lose.
+  {
+    "neovim/nvim-lspconfig",
+    opts = {
+      setup = {
+        jsonls = function()
+          Snacks.util.lsp.on({ name = "jsonls" }, function(_, client)
+            client.server_capabilities.documentFormattingProvider = false
+            client.server_capabilities.documentRangeFormattingProvider = false
+          end)
+        end,
+      },
+    },
+  },
 }

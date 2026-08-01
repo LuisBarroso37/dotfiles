@@ -11,13 +11,14 @@ return {
     require("scrollbar").setup({
       handle = {
         color = mocha.overlay0,
+        -- Default is 30; fully opaque so the handle stays visible over the marks.
         blend = 0,
       },
       handlers = {
-        cursor = true,
-        diagnostic = true, -- errors/warnings from the LSP
-        gitsigns = true, -- added/changed/removed lines
-        search = false, -- needs nvim-hlslens; off to avoid the extra dep
+        -- Only non-default handler: gitsigns marks (added/changed/removed lines) are
+        -- off upstream because they need the gitsigns dependency, which we have.
+        -- cursor/diagnostic are on and search is off by default already.
+        gitsigns = true,
       },
     })
     require("scrollbar.handlers.gitsigns").setup()
