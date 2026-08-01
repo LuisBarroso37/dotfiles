@@ -12,7 +12,8 @@ set -euo pipefail
 #   4. mise (runtime version manager) comes from the repo when packaged and from
 #      its own installer otherwise; language runtimes are then chosen per machine
 #      with `mise use -g` (see .zshrc).
-#   5. The tail (submodules, stow, TPM, sesh file) is identical to install.sh.
+#   5. The tail (submodules, stow, TPM, sesh file, verification) is shared with
+#      install.sh — it lives in install.common.sh, sourced below.
 #
 # Re-running this script is safe: every step is idempotent.
 
@@ -49,10 +50,11 @@ if [ "$(id -u)" -eq 0 ] && [ -z "${DOTFILES_ALLOW_ROOT:-}" ]; then
   exit 1
 fi
 
-# Anything this script has to move out of the way lands here rather than being
-# clobbered — a fresh machine usually ships a skeleton ~/.zshrc, and stow refuses
-# to overwrite it (which is what made a first run abort with "existing target").
-BACKUP="$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)"
+# Sourced AFTER the root guard: install.common.sh derives $BACKUP from $HOME, and
+# under sudo that would be /root. Provides bin_name, stow_with_backup,
+# run_shared_tail, verify_install, print_next_steps and the $BACKUP default.
+# shellcheck source=install.common.sh
+source "$DOTFILES/install.common.sh"
 
 # Package-manager chatter is verbose and mostly noise, so it goes to a log and
 # only surfaces when something actually fails. NOT /dev/null: the old script sent
@@ -123,20 +125,6 @@ pkg_name() { # map a tool to this PM's package name (differences are the excepti
     shellcheck)  case "$PM" in dnf|zypper) echo "ShellCheck" ;; *) echo "shellcheck" ;; esac ;;
     # Supplies tic, used to compile terminfo/ below.
     ncurses)     case "$PM" in apt) echo "ncurses-bin" ;; zypper) echo "ncurses-utils" ;; *) echo "ncurses" ;; esac ;;
-    *)           echo "$1" ;;
-  esac
-}
-
-bin_name() { # the executable a tool provides, for "is it already here?" checks
-  case "$1" in
-    neovim)      echo "nvim" ;;
-    ripgrep)     echo "rg" ;;
-    git-delta)   echo "delta" ;;
-    sevenzip)    echo "7z" ;;
-    poppler)     echo "pdftoppm" ;;
-    imagemagick) echo "magick" ;;
-    ncurses)     echo "tic" ;;
-    fontconfig)  echo "fc-cache" ;;
     *)           echo "$1" ;;
   esac
 }
@@ -422,149 +410,9 @@ if [ -f "$DOTFILES/install.local.sh" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 9. Shared tail — mirrors install.sh
+# 9. Shared tail + verification — install.common.sh (also used by install.sh)
 # ---------------------------------------------------------------------------
-echo ""
-echo "==> Initialising submodules"
-cd "$DOTFILES"
-if [ -e "$DOTFILES/.git" ]; then
-  git submodule update --init --recursive
-else
-  echo "   ! not a git clone — skipping (catppuccin/tmux theme will be absent)"
-fi
-
-# Stow refuses to overwrite a real file that it doesn't own, and a fresh distro
-# account usually ships a skeleton ~/.zshrc — which aborted the whole restow and
-# left the install half-applied. Move whatever it objects to into $BACKUP and
-# retry, using stow's own conflict report as the authority on what's in the way.
-stow_with_backup() {
-  local target="$1"; shift
-  local attempt out conflicts rel
-  for attempt in 1 2 3; do
-    if out="$(stow --restow --target="$target" "$@" 2>&1)"; then
-      [ -n "$out" ] && printf '%s\n' "$out"
-      return 0
-    fi
-    conflicts="$(printf '%s\n' "$out" \
-      | sed -n -e 's/^ *\* existing target is[^:]*: *//p' \
-               -e 's/^ *\* cannot stow .* over existing target \(.*\) since.*$/\1/p')"
-    if [ -z "$conflicts" ]; then
-      printf '%s\n' "$out" >&2
-      return 1
-    fi
-    while IFS= read -r rel; do
-      [ -n "$rel" ] || continue
-      [ -e "$target/$rel" ] || [ -L "$target/$rel" ] || continue
-      mkdir -p "$BACKUP/$(dirname "$rel")"
-      mv "$target/$rel" "$BACKUP/$rel"
-      echo "   ↳ backed up $target/$rel → $BACKUP/$rel"
-    done <<< "$conflicts"
-  done
-  echo "!! stow still reports conflicts after 3 attempts" >&2
-  return 1
-}
-
-# Stow BEFORE cloning TPM: this makes ~/.config/tmux a symlink into the repo, so the
-# TPM clone below lands at $DOTFILES/tmux/plugins/tpm (gitignored). Cloning first
-# would create a real ~/.config/tmux directory and make `stow .` conflict on tmux.
-echo "==> Stowing dotfiles"
-mkdir -p "$HOME/.config"      # stow aborts if --target from .stowrc doesn't exist
-stow_with_backup "$HOME/.config" .   # nvim, tmux, sesh, ghostty, starship, atuin, git, lazygit, yazi
-stow_with_backup "$HOME" zsh         # zsh dotfiles live in ~, not ~/.config
-
-## herdr is stowignored: it writes runtime state (logs, sockets, session.json)
-## into ~/.config/herdr, so that directory has to stay a real directory rather
-## than a stow-folded symlink into the repo. Only config.toml is linked, by hand.
-echo "==> Linking herdr config"
-# An earlier run (before herdr was added to .stowrc's ignore list) folded the whole
-# directory into a symlink → $DOTFILES/herdr. Left in place, the ln below resolves
-# source and target to the same path, fails "are the same file", and `set -e` kills
-# the script before terminfo/TPM/sesh ever run. Unfold it first.
-if [ -L "$HOME/.config/herdr" ]; then
-  rm -f "$HOME/.config/herdr"
-  echo "   ↳ unfolded stow symlink at ~/.config/herdr into a real directory"
-fi
-mkdir -p "$HOME/.config/herdr"
-ln -sfn "$DOTFILES/herdr/config.toml" "$HOME/.config/herdr/config.toml"
-
-## terminfo/ is stowignored: these are compiled into ~/.terminfo, not symlinked.
-## Adds an xterm-256color variant carrying Smulx/Setulc so neovim emits undercurl
-## inside herdr panes (see the TERM swap in zsh/.zshrc).
-echo "==> Compiling terminfo entries"
-if command -v tic >/dev/null 2>&1; then
-  for ti in "$DOTFILES"/terminfo/*.terminfo; do
-    [ -e "$ti" ] || continue
-    tic -x -o "$HOME/.terminfo" "$ti" && echo "   ✓ $(basename "$ti")"
-  done
-else
-  echo "   ✗ tic not found (install ncurses) — undercurl in herdr panes will be off"
-fi
-
-echo "==> Installing TPM (tmux plugin manager)"
-if [ ! -d "$HOME/.config/tmux/plugins/tpm" ]; then
-  git clone https://github.com/tmux-plugins/tpm "$HOME/.config/tmux/plugins/tpm"
-else
-  echo "   ✓ already present"
-fi
-
-# sesh/sesh.toml imports a machine-specific session file; sesh errors if the
-# import target is missing, so guarantee it exists (empty is fine). Put work/
-# client project sessions here — it stays untracked, outside the dotfiles repo.
-echo "==> Ensuring machine-specific sesh session file exists"
-[ -f "$HOME/.config/sesh.local.toml" ] || touch "$HOME/.config/sesh.local.toml"
-
-# ---------------------------------------------------------------------------
-# 10. Verify
-# ---------------------------------------------------------------------------
-# The old script reported on the package step only, so a run that stowed nothing
-# still ended with "Done!". Check what actually landed.
-echo ""
-echo "==> Verifying"
-_fail=0
-
-for tool in zsh tmux stow neovim ripgrep fzf zoxide bat fd gh lazygit \
-            git-delta starship atuin yazi carapace sesh herdr mise jq; do
-  bin="$(bin_name "$tool")"
-  command -v "$bin" >/dev/null 2>&1 || { echo "   ✗ missing binary: $bin ($tool)"; _fail=1; }
-done
-
-check_link() { # $1 = path that must resolve into the repo
-  # Deliberately not `[ -L ]`: when stow folds a whole package it links the
-  # *directory* (~/.config/ghostty → repo/ghostty), so the file underneath is a
-  # real file reached through the symlink. What matters is where the path ends
-  # up, not which component carries the link — so resolve and compare.
-  local real
-  if [ -e "$1" ] && real="$(readlink -f "$1")" \
-     && case "$real" in "$DOTFILES"/*) true ;; *) false ;; esac; then
-    return 0
-  fi
-  echo "   ✗ not linked into the repo: $1"; _fail=1
-}
-for l in "$HOME/.zshrc" "$HOME/.zshenv" "$HOME/.zprofile" \
-         "$HOME/.config/nvim" "$HOME/.config/tmux" "$HOME/.config/sesh" \
-         "$HOME/.config/starship.toml" "$HOME/.config/atuin" \
-         "$HOME/.config/git" "$HOME/.config/lazygit" "$HOME/.config/yazi" \
-         "$HOME/.config/ghostty/config" "$HOME/.config/herdr/config.toml"; do
-  check_link "$l"
-done
-
-[ -d "$HOME/.config/tmux/plugins/tpm" ] || { echo "   ✗ TPM not installed"; _fail=1; }
-[ -f "$HOME/.config/sesh.local.toml" ]  || { echo "   ✗ sesh.local.toml missing"; _fail=1; }
-infocmp xterm-256color-undercurl >/dev/null 2>&1 \
-  || echo "   ! terminfo entry xterm-256color-undercurl not compiled (undercurl only)"
-
-if [ "$_fail" -eq 0 ]; then
-  echo "   ✓ all checks passed"
-else
-  echo "   (anything above is listed with a recipe in the 'Install these manually' section)"
-fi
-
-[ -d "$BACKUP" ] && echo "" && echo "==> Files moved aside are in $BACKUP"
-
-echo ""
-echo "Done! Log: $LOG"
-echo "Next:"
-echo "  1. Restart your terminal (or 'exec zsh') — the login shell change needs a re-login."
-echo "  2. In tmux, press prefix+I to install plugins."
-echo "  3. Run 'gh auth login' so wtr can detect merged PRs."
-echo "  4. Pick language runtimes: mise use -g node@lts java@corretto-25 go@latest"
+NEXT_STEP_FIRST="Log out and back in — the login-shell change only applies to a new login."
+run_shared_tail
+verify_install
+print_next_steps

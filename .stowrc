@@ -1,8 +1,6 @@
 --target=~/.config
 --ignore=README\.md
---ignore=install\.sh
---ignore=install\.linux\.sh
---ignore=install\.local\.sh
+--ignore=install.*\.sh
 --ignore=cheatsheet\.md
 --ignore=\.gitignore
 --ignore=\.stowrc
