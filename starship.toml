@@ -19,7 +19,6 @@ command_timeout = 2000
 scan_timeout = 100
 
 [character]
-vicmd_symbol = "[N] >>>"
 success_symbol = '[➜](bold green)'
 
 [git_branch]

@@ -22,7 +22,8 @@ require("lazy").setup({
     -- manual picker (<leader>fm). Both extras are declared in lazyvim.json so
     -- :LazyExtras reflects reality — importing one here instead bypassed
     -- LazyVim's bookkeeping and showed mini-files as "not enabled".
-    { "nvim-neo-tree/neo-tree.nvim", enabled = false },
+    -- No neo-tree disable is needed: it is not in LazyVim's core spec, only in
+    -- the (unenabled) lazyvim.plugins.extras.editor.neo-tree extra.
     -- disable LazyVim's default colorscheme
     { "folke/tokyonight.nvim", enabled = false },
     -- catppuccin colorscheme
