@@ -1,0 +1,17 @@
+# xterm-256color, plus the two capabilities needed for undercurl and coloured
+# underlines (LSP diagnostic squiggles in neovim).
+#
+# Why this exists: herdr runs every pane with TERM=xterm-256color. Its terminal
+# emulator is ghostty-derived and *does* render SGR 4:3 / 58, but the stock
+# xterm-256color terminfo advertises neither Smulx nor Setulc, so neovim falls
+# back to a plain underline and diagnostics lose their red squiggle.
+#
+# Rather than shadowing the stock xterm-256color entry (which would change
+# behaviour for every terminal on the machine), this is a separate entry that
+# zsh switches to only inside a herdr pane. Compile with:
+#   tic -x -o ~/.terminfo terminfo/xterm-256color-undercurl.terminfo
+# The escape sequences are copied verbatim from ghostty's own terminfo entry.
+xterm-256color-undercurl|xterm-256color with undercurl and coloured underlines,
+	Smulx=\E[4\:%p1%dm,
+	Setulc=\E[58\:2\:\:%p1%{65536}%/%d\:%p1%{256}%/%{255}%&%d\:%p1%{255}%&%d%;m,
+	use=xterm-256color,

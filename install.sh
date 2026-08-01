@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-DOTFILES="$HOME/dotfiles"
+# Resolve the repo from this script's own location, so the bootstrap works from a
+# clone anywhere — not just ~/dotfiles.
+DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # This script is macOS/Homebrew-only. On Linux, hand off to the native-package-
 # manager bootstrap so nobody accidentally installs Homebrew-on-Linux.
@@ -14,6 +16,18 @@ echo "==> Installing Homebrew (if missing)"
 if ! command -v brew &>/dev/null; then
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
+
+# The installer does not put brew on PATH for the *current* shell, and on Apple
+# Silicon /opt/homebrew/bin isn't on the default PATH at all — so the very next
+# `brew install` would die with "command not found" on a fresh Mac. Load the
+# environment explicitly, trying both prefixes.
+if ! command -v brew &>/dev/null; then
+  for _brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$_brew" ] && { eval "$("$_brew" shellenv)"; break; }
+  done
+  unset _brew
+fi
+command -v brew &>/dev/null || { echo "install.sh: brew not found after install" >&2; exit 1; }
 
 echo "==> Installing packages"
 brew install \
@@ -33,16 +47,31 @@ brew install \
   gh \
   git-delta \
   yazi \
-  mise
+  mise \
+  jq \
+  herdr \
+  shellcheck \
+  ffmpeg \
+  sevenzip \
+  poppler \
+  imagemagick
 
-# Yazi optional dependencies — install per machine in install.local.sh (see the
-# sourced hook below), e.g.:
-#   brew install ffmpegthumbnailer ffmpeg sevenzip jq poppler imagemagick
-#   ffmpegthumbnailer + ffmpeg  → video thumbnails/preview
-#   sevenzip                    → archive previews
-#   jq                          → JSON preview formatting
-#   poppler                     → PDF preview
-#   imagemagick                 → AVIF/HEIC/JXL image support
+# jq is NOT optional: zsh/.zshrc's _herdr_ws_at / wth / wthr parse `herdr
+# workspace list` through it. herdr likewise — the tracked .zshrc defines wth and
+# wthr against it, so a machine without the binary gets dead functions.
+#
+# The last four are yazi's preview backends, previously left to install.local.sh
+# and therefore absent from every rebuild:
+#   ffmpeg       → video thumbnails/preview
+#   sevenzip     → archive previews
+#   poppler      → PDF preview
+#   imagemagick  → AVIF/HEIC/JXL image support
+# Install the plain formulae, not the `-full` variants: those pull ~85 extra
+# transitive deps (whisper-cpp, tesseract, vulkan-*, ghostscript) for previews
+# that work fine without them.
+#
+# Machine-specific toolchains (embedded: arm-none-eabi-gdb, clang-format; JDKs;
+# anything else) belong in install.local.sh, sourced below.
 
 brew install --cask ghostty font-jetbrains-mono-nerd-font
 
@@ -63,8 +92,25 @@ git submodule update --init --recursive
 # TPM clone below lands at ~/dotfiles/tmux/plugins/tpm (gitignored). Cloning first
 # would create a real ~/.config/tmux directory and make `stow .` conflict on tmux.
 echo "==> Stowing dotfiles"
+mkdir -p "$HOME/.config"      # stow aborts if --target from .stowrc doesn't exist
 stow --restow .               # ~/.config packages (nvim, tmux, sesh, ghostty, starship, atuin)
 stow --restow --target="$HOME" zsh  # zsh dotfiles live in ~, not ~/.config
+
+## herdr is stowignored: it writes runtime state (logs, sockets, session.json)
+## into ~/.config/herdr, so that directory has to stay a real directory rather
+## than a stow-folded symlink into the repo. Only config.toml is linked, by hand.
+## Leaving it to `stow .` makes the whole restow abort on "target not owned by stow".
+echo "==> Linking herdr config"
+mkdir -p "$HOME/.config/herdr"
+ln -sfn "$DOTFILES/herdr/config.toml" "$HOME/.config/herdr/config.toml"
+
+## terminfo/ is stowignored: these are compiled into ~/.terminfo, not symlinked.
+## Adds an xterm-256color variant carrying Smulx/Setulc so neovim emits undercurl
+## inside herdr panes (see the TERM swap in zsh/.zshrc).
+echo "==> Compiling terminfo entries"
+for ti in "$DOTFILES"/terminfo/*.terminfo; do
+  [ -e "$ti" ] && tic -x -o "$HOME/.terminfo" "$ti"
+done
 
 echo "==> Installing TPM (tmux plugin manager)"
 if [ ! -d "$HOME/.config/tmux/plugins/tpm" ]; then
@@ -79,6 +125,3 @@ echo "==> Ensuring machine-specific sesh session file exists"
 
 echo ""
 echo "Done! Restart your terminal. In tmux run prefix+I to install plugins."
-# gh needs a one-time interactive login before wtr's PR-merge cleanup works:
-#   gh auth login
-echo "Next: run 'gh auth login' so wtr can detect merged PRs."

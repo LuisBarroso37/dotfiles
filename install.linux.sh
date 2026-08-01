@@ -210,6 +210,22 @@ echo "==> Stowing dotfiles"
 stow --restow .               # ~/.config packages (nvim, tmux, sesh, ghostty, starship, atuin)
 stow --restow --target="$HOME" zsh  # zsh dotfiles live in ~, not ~/.config
 
+## herdr is stowignored: it writes runtime state (logs, sockets, session.json)
+## into ~/.config/herdr, so that directory has to stay a real directory rather
+## than a stow-folded symlink into the repo. Only config.toml is linked, by hand.
+## Leaving it to `stow .` makes the whole restow abort on "target not owned by stow".
+echo "==> Linking herdr config"
+mkdir -p "$HOME/.config/herdr"
+ln -sfn "$DOTFILES/herdr/config.toml" "$HOME/.config/herdr/config.toml"
+
+## terminfo/ is stowignored: these are compiled into ~/.terminfo, not symlinked.
+## Adds an xterm-256color variant carrying Smulx/Setulc so neovim emits undercurl
+## inside herdr panes (see the TERM swap in zsh/.zshrc).
+echo "==> Compiling terminfo entries"
+for ti in "$DOTFILES"/terminfo/*.terminfo; do
+  [ -e "$ti" ] && tic -x -o "$HOME/.terminfo" "$ti"
+done
+
 echo "==> Installing TPM (tmux plugin manager)"
 if [ ! -d "$HOME/.config/tmux/plugins/tpm" ]; then
   git clone https://github.com/tmux-plugins/tpm "$HOME/.config/tmux/plugins/tpm"

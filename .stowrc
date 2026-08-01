@@ -3,10 +3,11 @@
 --ignore=install\.sh
 --ignore=install\.linux\.sh
 --ignore=install\.local\.sh
---ignore=migrate\.sh
 --ignore=cheatsheet\.md
 --ignore=\.gitignore
 --ignore=\.stowrc
 --ignore=\.DS_Store
 --ignore=\.gitmodules
 --ignore=zsh
+--ignore=terminfo
+--ignore=herdr
