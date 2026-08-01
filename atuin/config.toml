@@ -6,7 +6,10 @@
 # taken, not the installed version — and an [ai] section added later landed
 # between the [ui] header and the commented `columns` setting it documents, so
 # uncommenting that would have silently put a ui key under [ai].
-# For the current, accurate list: https://docs.atuin.sh/configuration/config/
+# For the current, accurate list: https://docs.atuin.sh/latest/configuration/config/
+# (the un-versioned /configuration/config/ path 404s since 18.18.0 — the docs site
+# moved behind a /latest/ prefix. Worth keeping correct: this pointer being dead is
+# why a key removed upstream sat in this file unnoticed.)
 
 # Enter runs the command immediately; Tab puts it on the prompt for editing.
 enter_accept = true
@@ -14,11 +17,6 @@ enter_accept = true
 # Fuzzy search served by the daemon below rather than by a per-invocation sqlite
 # open — noticeably faster on a large history.
 search_mode = "daemon-fuzzy"
-
-[sync]
-# Sync v2. The default for new installs; set explicitly so behaviour doesn't
-# depend on when a given machine was first set up.
-records = true
 
 [daemon]
 # Persistent background process keeping the history DB open — what makes
@@ -28,5 +26,28 @@ autostart = true
 
 [ai]
 # The `?` key generates a command from a natural-language description. Off by
-# default. Atuin sends only OS and shell name/version, not shell history.
+# default upstream; enabled here for that one purpose.
+#
+# The opening request really is minimal — [ai.opening] send_cwd and
+# send_last_command both default to false, so they are left unset.
+#
+# What is NOT minimal is the tool set. An earlier comment here claimed "Atuin
+# sends only OS and shell name/version, not shell history"; that is false for
+# 18.18.1. The assistant can *request* four further capabilities, and each one is
+# enabled-by-default-with-a-prompt when left unset (settings.rs:648-657,
+# `None` = "defaults to enabled, and the ai will ask for permission"):
+# history search, stored command output, file read/write, and bash execution.
+# Requests go to Atuin's hosted endpoint unless [ai] endpoint is overridden.
+#
+# On a machine whose shell history is thousands of commands run against a
+# PHI-handling healthcare platform, "there is a prompt" is not an adequate
+# control — one distracted `y` exports patient-adjacent context to a third party.
+# So the capabilities are pinned off explicitly rather than left to a default that
+# upstream is free to change. Command generation still works: it needs none of them.
 enabled = true
+
+[ai.capabilities]
+enable_history_search = false
+enable_history_output = false
+enable_file_tools = false
+enable_command_execution = false
