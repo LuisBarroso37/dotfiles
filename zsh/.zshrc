@@ -94,6 +94,15 @@ _wt_default_branch() {
   print -r -- "${def:-main}"
 }
 
+# Shared guard for wtr/wthr: never tear down the worktree holding the branch the
+# repo is based on. Also refuses main/master outright, so a repo that defaults to
+# develop still protects them. $1 = branch, $2 = caller name for the message.
+_wt_refuse_default() {
+  [[ "$1" == (main|master) || "$1" == "$(_wt_default_branch)" ]] || return 0
+  echo "$2: refusing to remove the default branch's worktree ($1)." >&2
+  return 1
+}
+
 # Path of the worktree checked out on <branch>, asked of git rather than derived
 # from the naming convention. Worktrees made by plain `git worktree add`, by
 # herdr's own directory config, or under the pre-2026-08 naming scheme all live
@@ -165,7 +174,9 @@ _wt_sync_excludes() {
   local wt rel
   while IFS= read -r wt; do
     [[ "$wt" == "$main" ]] && continue
-    rel="${wt#$main/}"
+    # "$main" quoted inside the pattern: unquoted, a repo path containing glob
+    # metacharacters ([ ? *) would be matched as a pattern instead of literally.
+    rel="${wt#"$main"/}"
     [[ "$rel" == "$wt" ]] && continue          # not nested under the main checkout
     entries+=("/${rel%%/*}/")                  # top-level dir only, anchored
   done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
@@ -236,16 +247,18 @@ wtc() {
 # branches — run `gh poi` afterwards to bulk-remove those.
 # Defaults to the current branch; refuses when run from inside the session it
 # would kill — run it from another session (e.g. your main worktree).
+# `--force` discards a dirty checkout, matching wthr.
 wtr() {
+  local -a flags=()
+  while [[ "$1" == -* ]]; do flags+=("$1"); shift; done
   local branch="${1:-$(git branch --show-current 2>/dev/null)}"
+  [[ $# -gt 0 ]] && shift
+  flags+=("$@")
   if [[ -z "$branch" ]]; then
-    echo "usage: wtr [branch-name]   (defaults to current branch)" >&2
+    echo "usage: wtr [branch-name] [--force]   (branch defaults to current)" >&2
     return 1
   fi
-  if [[ "$branch" == (main|master) || "$branch" == "$(_wt_default_branch)" ]]; then
-    echo "wtr: refusing to remove the default branch's worktree ($branch)." >&2
-    return 1
-  fi
+  _wt_refuse_default "$branch" wtr || return 1
   local wt_main wt_repo wt_parent wt_sani wt_dir wt_session
   _wt_paths "$branch" \
     || { echo "wtr: not inside a git repository" >&2; return 1; }
@@ -268,7 +281,7 @@ wtr() {
     echo "     Run it from another session (e.g. your main worktree)." >&2
     return 1
   fi
-  git worktree remove "$dir" || return 1
+  git worktree remove "${flags[@]}" "$dir" || return 1
   _wt_sync_excludes
   _wt_drop_branch "$branch"
   tmux kill-session -t "=$session" 2>/dev/null
@@ -383,10 +396,7 @@ wthr() {
     echo "usage: wthr [branch-name] [--force]   (branch defaults to current)" >&2
     return 1
   fi
-  if [[ "$branch" == (main|master) || "$branch" == "$(_wt_default_branch)" ]]; then
-    echo "wthr: refusing to remove the default branch's worktree ($branch)." >&2
-    return 1
-  fi
+  _wt_refuse_default "$branch" wthr || return 1
   command -v jq &>/dev/null \
     || { echo "wthr: jq is required (brew install jq)" >&2; return 1; }
   local wt_main wt_repo wt_parent wt_sani wt_dir wt_session
@@ -415,15 +425,7 @@ wthr() {
 # <default> with a clean tree (it never rewrites and never touches a dirty or
 # other-branch worktree).
 wtrebase() {
-  local def
-  def="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"; def="${def#origin/}"
-  if [[ -z "$def" ]]; then
-    local b
-    for b in main master; do
-      git show-ref -q --verify "refs/remotes/origin/$b" && { def="$b"; break; }
-    done
-  fi
-  def="${def:-main}"
+  local def; def="$(_wt_default_branch)"
   local cur; cur="$(git branch --show-current 2>/dev/null)"
   if [[ -z "$cur" ]]; then
     echo "wtrebase: detached HEAD or not a git repository" >&2
