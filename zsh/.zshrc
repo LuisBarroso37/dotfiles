@@ -22,7 +22,8 @@ command -v carapace &>/dev/null && source <(carapace _carapace)
 command -v sesh &>/dev/null && eval "$(sesh completion zsh)"
 
 # Pick a session and connect to it — the shell-side twin of the tmux `T` binding
-# (Ctrl+a T). Uses plain fzf (not fzf-tmux) so it also works before tmux starts.
+# (Ctrl+b T — tmux keeps its stock prefix; Ctrl+a is herdr's). Uses plain fzf (not
+# fzf-tmux) so it also works before tmux starts, which is the case this exists for.
 s() {
   local sel
   sel="$(
@@ -89,8 +90,9 @@ command -v mise &>/dev/null && eval "$(mise activate zsh)"
 # --- Git worktrees + tmux / herdr ------------------------------------------
 # Worktrees are subdirs named <parent>/<repo>/<branch-slug>; each gets a tmux
 # session named <repo>/<branch-slug> (slashes are safe with the = exact-match
-# prefix). sesh (Ctrl+a T) browses tmux sessions; herdr (wth/wthr) manages the
-# herdr workspaces.
+# prefix; '.' and ':' are not, so _wt_paths collapses them — see the note there).
+# sesh (Ctrl+b T, tmux's stock prefix) browses tmux sessions; herdr (wth/wthr,
+# under its own Ctrl+a prefix) manages the herdr workspaces.
 
 # Resolve the repo's default branch from origin/HEAD, falling back to whichever
 # of main/master exists on the remote. Repos that default to develop/trunk are
@@ -135,7 +137,7 @@ _wt_dir_for_branch() {
 # without printing, so each caller can name itself in the error.
 #   wt_main    absolute path of the main checkout
 #   wt_repo / wt_parent   its basename / parent dir
-#   wt_sani    branch with '/' collapsed to '-'
+#   wt_sani    branch with '/', '.' and ':' collapsed to '-'
 #   wt_dir     conventional worktree path  <parent>/<repo>/<slug>
 #   wt_session tmux session name / herdr label  <repo>/<slug>
 _wt_paths() {
@@ -143,7 +145,14 @@ _wt_paths() {
   wt_main="${wt_main%/.git}"
   wt_repo="${wt_main:t}"
   wt_parent="${wt_main:h}"
-  wt_sani="${1//\//-}"
+  # '.' and ':' are collapsed as well as '/', and not for cosmetics: tmux parses
+  # '.' as the window.pane separator and ':' as session:window, so `-t "=$session"`
+  # fails for any branch carrying one. The '=' exact-match prefix does NOT protect
+  # against it — verified on an isolated socket, `tmux has-session -t
+  # '=repo/release-1.2.0'` answers "can't find pane: 2.0". The visible damage was
+  # in teardown: wtr removed the worktree, its kill-session silently failed, and
+  # the resurrect snapshot then pointed at a directory that no longer existed.
+  wt_sani="${${1//\//-}//[.:]/-}"
   wt_dir="$wt_parent/$wt_repo/$wt_sani"
   wt_session="$wt_repo/$wt_sani"
 }
@@ -152,11 +161,34 @@ _wt_paths() {
 # have no ancestry to prove, so `-d` refuses them — `gh poi` sweeps those, asking
 # the GitHub API whether the PR actually merged rather than guessing from local
 # state (`gh extension install seachicken/gh-poi`).
+#
+# `git branch -d` alone is NOT the safety proof it looks like: it deletes a branch
+# merged into *its own upstream*, not into the default branch. On a pushed branch
+# whose PR is still open, git emits "warning: deleting branch 'x' that has been
+# merged to 'refs/remotes/origin/x', but not yet merged to HEAD" and exits 0 — and
+# the old `2>/dev/null` swallowed exactly that warning, so wtr reported
+# "✓ deleted branch" while destroying work-in-progress. Hence the explicit
+# ancestry check against the default branch before -d is allowed to run, and no
+# redirect hiding what git says.
 _wt_drop_branch() {
-  if git branch -d "$1" 2>/dev/null; then
+  local def ref out
+  def="$(_wt_default_branch)"
+  if git rev-parse --verify --quiet "origin/$def" >/dev/null 2>&1; then
+    ref="origin/$def"
+  elif git rev-parse --verify --quiet "$def" >/dev/null 2>&1; then
+    ref="$def"
+  else
+    ref=""
+  fi
+  if [[ -n "$ref" ]] && ! git merge-base --is-ancestor "$1" "$ref" 2>/dev/null; then
+    print -r -- "• kept branch '$1' (not merged into $ref — run 'gh poi' once its PR lands)"
+    return 0
+  fi
+  if out="$(git branch -d "$1" 2>&1)"; then
     print -r -- "✓ deleted branch '$1'"
   else
     print -r -- "• kept branch '$1' (squash/rebase-merged — run 'gh poi' to clean up)"
+    [[ -n "$out" ]] && print -r -- "  $out"
   fi
 }
 
@@ -267,9 +299,26 @@ wtc() {
   _wt_paths "$branch" \
     || { echo "wtc: not inside a git repository" >&2; return 1; }
   local dir="$wt_dir" session="$wt_session"
-  if [[ ! -d "$dir" ]]; then
-    git worktree add -b "$branch" "$dir" 2>/dev/null \
-      || git worktree add "$dir" "$branch" \
+  # Ask git where the branch is checked out before deciding anything. Testing the
+  # conventional path instead broke both ways: a worktree created by a raw
+  # `git worktree add`, by herdr, or under the pre-2026-08 layout made wtc die with
+  # "could not create worktree" on a worktree wtr resolves fine; and a leftover
+  # plain directory at $dir (a worktree rm -rf'd without `git worktree prune`) made
+  # the -d test true, so wtc skipped creation and opened a session in a directory
+  # git has no worktree for.
+  local existing; existing="$(_wt_dir_for_branch "$branch")"
+  if [[ -n "$existing" ]]; then
+    dir="$existing"
+  elif [[ ! -d "$dir" ]]; then
+    # Order matters. `git worktree add -b <branch> <dir>` ALWAYS succeeds by
+    # branching from the current HEAD, so trying it first made the tracking form
+    # below unreachable: `wtc someone-elses-branch` silently gave you a fresh empty
+    # branch off your own HEAD, with no upstream, instead of their work — you then
+    # committed on the wrong base and the first push rejected or clobbered. The
+    # DWIM form goes first so an existing remote branch is tracked; -b is the
+    # fallback for a genuinely new branch.
+    git worktree add "$dir" "$branch" 2>/dev/null \
+      || git worktree add -b "$branch" "$dir" \
       || { echo "wtc: could not create worktree at $dir" >&2; return 1; }
   fi
   _wt_sync_excludes
