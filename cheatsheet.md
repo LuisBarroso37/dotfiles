@@ -66,11 +66,11 @@
 | Rebase current branch onto latest main | `wtrebase` — fetches, rebases onto `origin/<main>` (auto-stashes), and fast-forwards the main worktree too if it's clean & on main |
 | Remove a worktree (+ session, + branch if merged) | `wtr ICP-1234-desc` — from your **main** session, not from inside it |
 | Remove the worktree you're near | `wtr` (no arg → current branch) — must be run from **another** session |
-| Bulk-delete branches whose work already landed | `wtclean` |
+| Bulk-delete branches whose PRs have merged | `gh poi` |
 
 - ✅ `wtc` drops you straight into the new worktree's session (switches client if already in tmux, attaches if not).
-- ✅ `wtr` from your base (`main`) session; it kills the session and deletes the branch with a safe `git branch -d`. Squash/rebase-merged branches have no ancestry to check, so `-d` refuses them and `wtr` keeps them — run `wtclean` to sweep those up. No GitHub API call is involved.
-- ✅ `wtclean` fetches with `--prune`, then offers two groups **separately**: branches merged into the default branch (safe `-d`), and branches whose upstream is gone after a squash/rebase merge (force `-D`, with the count of commits you'd drop shown first). Branches still checked out in a worktree are listed as "run `wtr` first" rather than failing.
+- ✅ `wtr` from your base (`main`) session; it kills the session and deletes the branch with a safe `git branch -d`. Squash/rebase-merged branches have no ancestry to check, so `-d` refuses them and `wtr` keeps them — run `gh poi` to sweep those up.
+- ✅ **`gh poi`** ([seachicken/gh-poi](https://github.com/seachicken/gh-poi), `gh extension install seachicken/gh-poi`) is the branch cleanup. It asks the **GitHub API** whether each branch's PR merged, so squash and rebase merges are detected definitively rather than guessed from "the upstream disappeared". It protects the default branch and anything with unpushed commits. `gh poi --dry-run` to preview.
 - ❌ `wtr` while standing inside the worktree/session you're deleting — it refuses, in tmux **and** outside it.
 
 ### herdr variants

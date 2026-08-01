@@ -127,12 +127,14 @@ _wt_paths() {
 }
 
 # Delete <branch> only if git can prove it is safe. Squash/rebase-merged branches
-# have no ancestry to prove, so `-d` refuses them and wtclean sweeps them later.
+# have no ancestry to prove, so `-d` refuses them — `gh poi` sweeps those, asking
+# the GitHub API whether the PR actually merged rather than guessing from local
+# state (`gh extension install seachicken/gh-poi`).
 _wt_drop_branch() {
   if git branch -d "$1" 2>/dev/null; then
     print -r -- "✓ deleted branch '$1'"
   else
-    print -r -- "• kept branch '$1' (squash/rebase-merged — run wtclean to bulk-remove)"
+    print -r -- "• kept branch '$1' (squash/rebase-merged — run 'gh poi' to clean up)"
   fi
 }
 
@@ -177,7 +179,7 @@ wtc() {
 
 # Remove a worktree and its tmux session. Deletes the branch if git considers it
 # merged (fast-forward / merge commit); leaves it in place for squash/rebase-merged
-# branches — run wtclean afterwards to bulk-remove those.
+# branches — run `gh poi` afterwards to bulk-remove those.
 # Defaults to the current branch; refuses when run from inside the session it
 # would kill — run it from another session (e.g. your main worktree).
 wtr() {
@@ -346,100 +348,6 @@ wthr() {
   fi
   herdr worktree remove --workspace "$workspace_id" "${flags[@]}" || return 1
   _wt_drop_branch "$branch"
-  return 0
-}
-
-# Bulk-remove local branches whose work has already landed on the default branch.
-# Two groups, deliberately kept apart because they carry different risk:
-#   * merged   — tip is contained in <base>; `git branch -d` re-verifies that
-#                itself, so deletion cannot lose work.
-#   * gone     — upstream was deleted after a squash/rebase merge. There is no
-#                ancestry to check, so this needs `-D` (force) and gets its own
-#                confirmation showing how many commits would be dropped.
-# Everything is read with `git for-each-ref`, not parsed out of `git branch`
-# porcelain — the latter carries `*`/`+` markers and alignment padding that made
-# the previous implementation delete nothing at all.
-# No GitHub API call needed — relies entirely on local git state after a fetch.
-wtclean() {
-  git rev-parse --git-dir >/dev/null 2>&1 \
-    || { echo "wtclean: not inside a git repository" >&2; return 1; }
-
-  local base; base="$(_wt_default_branch)"
-
-  echo "Fetching and pruning remote tracking branches..."
-  git fetch --prune \
-    || { echo "wtclean: fetch failed — refusing to act on stale state." >&2; return 1; }
-
-  # Branches currently checked out in a worktree can't be deleted; surface them
-  # as a hint to run wtr/wthr first rather than as N cryptic failures.
-  local -a checked_out=()
-  local wb
-  while IFS= read -r wb; do
-    [[ -n "$wb" ]] && checked_out+=("${wb#refs/heads/}")
-  done < <(git worktree list --porcelain | sed -n 's/^branch //p')
-
-  local b u
-  local -a merged=() gone=() skipped=()
-
-  while IFS= read -r b; do
-    [[ -z "$b" || "$b" == "$base" || "$b" == (main|master) ]] && continue
-    if (( ${checked_out[(Ie)$b]} )); then skipped+=("$b"); continue; fi
-    merged+=("$b")
-  done < <(git for-each-ref --format='%(refname:short)' --merged "$base" refs/heads/)
-
-  while IFS=' ' read -r b u; do
-    [[ -z "$b" || "$b" == "$base" || "$b" == (main|master) ]] && continue
-    [[ "$u" == gone ]] || continue
-    (( ${merged[(Ie)$b]} )) && continue
-    if (( ${checked_out[(Ie)$b]} )); then skipped+=("$b"); continue; fi
-    gone+=("$b")
-  done < <(git for-each-ref --format='%(refname:short) %(upstream:track,nobracket)' refs/heads/)
-
-  if (( ${#skipped} )); then
-    print -r -- ""
-    print -r -- "Skipped (checked out in a worktree — run wtr/wthr first):"
-    printf '  %s\n' "${skipped[@]}"
-  fi
-
-  if (( ${#merged} == 0 && ${#gone} == 0 )); then
-    print -r -- "Nothing to remove — no stale merged branches found."
-    return 0
-  fi
-
-  local confirm
-
-  if (( ${#merged} )); then
-    print -r -- ""
-    print -r -- "Merged into $base (safe delete):"
-    printf '  %s\n' "${merged[@]}"
-    read -r "confirm?Delete ${#merged} merged branch(es)? [y/N] "
-    if [[ "$confirm" == [yY] ]]; then
-      for b in "${merged[@]}"; do
-        if git branch -d "$b"; then print -r -- "✓ deleted $b"; fi
-      done
-    else
-      print -r -- "Skipped merged branches."
-    fi
-  fi
-
-  if (( ${#gone} )); then
-    print -r -- ""
-    print -r -- "Upstream gone (squash/rebase-merged). Force delete — check the counts:"
-    local n
-    for b in "${gone[@]}"; do
-      n="$(git rev-list --count "$base..$b" 2>/dev/null)"
-      printf '  %s  (%s commit(s) not in %s)\n' "$b" "${n:-?}" "$base"
-    done
-    read -r "confirm?FORCE delete ${#gone} branch(es)? This cannot be undone. [y/N] "
-    if [[ "$confirm" == [yY] ]]; then
-      for b in "${gone[@]}"; do
-        if git branch -D "$b"; then print -r -- "✓ force-deleted $b"; fi
-      done
-    else
-      print -r -- "Skipped force deletions."
-    fi
-  fi
-
   return 0
 }
 
