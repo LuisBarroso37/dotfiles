@@ -13,9 +13,9 @@ if [ "$(uname -s)" != "Darwin" ]; then
 fi
 
 # Everything after the package step (submodules, stow, herdr, terminfo, TPM,
-# sesh file, verification) is identical on both platforms and lives here.
-# Sourced before anything touches $HOME: it runs the refuse-to-run-as-root check
-# at source time and derives $BACKUP from $HOME.
+# sesh file, verification) is identical on both platforms and lives here, run by
+# finish_install at the bottom. Sourced before anything touches $HOME: it runs
+# the refuse-to-run-as-root check at source time and derives $BACKUP from $HOME.
 # shellcheck source=install.common.sh
 source "$DOTFILES/install.common.sh"
 
@@ -80,7 +80,23 @@ brew install \
 # Machine-specific toolchains (embedded: arm-none-eabi-gdb, clang-format; JDKs;
 # anything else) belong in install.local.sh, sourced below.
 
-brew install --cask ghostty font-jetbrains-mono-nerd-font
+# GUI apps, deliberately NOT on the fatal path.
+#
+# `brew install --cask ghostty` exits non-zero when /Applications/Ghostty.app
+# already exists outside brew's control — which is the normal order of events,
+# since you need a terminal before you can clone this repo. Under `set -e` that
+# aborted the whole script at this line, so nothing was ever stowed and the run
+# ended with no error banner.
+#
+# --adopt makes brew take ownership of an identical existing app instead of
+# refusing. If it still fails (say the installed app is a different version),
+# warn and carry on: a terminal emulator or a font is not worth abandoning the
+# config bootstrap for, and the verification at the end reports the real state.
+for _cask in ghostty font-jetbrains-mono-nerd-font; do
+  brew install --cask --adopt "$_cask" \
+    || echo "!! cask '$_cask' did not install — continuing without it." >&2
+done
+unset _cask
 
 # Optional per-machine install steps (extra packages, yazi's preview deps, etc.)
 # live in an untracked install.local.sh next to this script — sourced here if it
@@ -91,6 +107,4 @@ if [ -f "$DOTFILES/install.local.sh" ]; then
   source "$DOTFILES/install.local.sh"
 fi
 
-run_shared_tail
-verify_install
-print_next_steps
+finish_install

@@ -31,8 +31,9 @@ fi
 # Sourced early and deliberately: install.common.sh runs the refuse-to-run-as-root
 # check at source time (it guards the stow/terminfo steps that live in there), and
 # derives $BACKUP from $HOME. So nothing above this line may touch $HOME.
-# Provides bin_name, stow_with_backup, run_shared_tail, verify_install,
-# print_next_steps and the $BACKUP default.
+# Provides bin_name, stow_with_backup and finish_install (which runs the tail,
+# verifies, prints next steps and returns non-zero if verification failed),
+# plus the $BACKUP default.
 # shellcheck source=install.common.sh
 source "$DOTFILES/install.common.sh"
 
@@ -393,6 +394,4 @@ fi
 # 9. Shared tail + verification — install.common.sh (also used by install.sh)
 # ---------------------------------------------------------------------------
 NEXT_STEP_FIRST="Log out and back in — the login-shell change only applies to a new login."
-run_shared_tail
-verify_install
-print_next_steps
+finish_install

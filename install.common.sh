@@ -192,20 +192,32 @@ verify_install() {
     command -v "$bin" >/dev/null 2>&1 || { echo "   ✗ missing binary: $bin ($tool)"; _fail=1; }
   done
 
-  # Deliberately not `[ -L ]`: when stow folds a whole package it links the
-  # *directory* (~/.config/ghostty → repo/ghostty), so the file underneath is a
-  # real file reached through the symlink. What matters is where the path ends up,
-  # not which component carries the link — so resolve and compare.
+  # Check a representative config FILE per package, never the directory.
+  #
+  # Stow has two equally-correct layouts and the directory-level check only
+  # recognised one of them. When the target doesn't exist yet stow *folds* the
+  # package — ~/.config/nvim becomes a symlink to repo/nvim. When the target is
+  # already a real directory holding runtime state (~/.config/atuin has
+  # history.db; ~/.config/herdr has sockets and logs) stow *unfolds* instead,
+  # leaving a real directory and symlinking the individual files inside it.
+  #
+  # Resolving the directory therefore reported a perfectly healthy unfolded
+  # package as broken — it flagged ~/.config/atuin on a working machine. Asking
+  # about the file the tool actually reads is immune to which layout stow chose:
+  # folded, it resolves through the directory link; unfolded, the file is itself
+  # the link. Either way the question is the one that matters — does this tool
+  # load its config from the repo?
   for l in "$HOME/.zshrc" "$HOME/.zshenv" "$HOME/.zprofile" \
-           "$HOME/.config/nvim" "$HOME/.config/tmux" "$HOME/.config/sesh" \
-           "$HOME/.config/starship.toml" "$HOME/.config/atuin" \
-           "$HOME/.config/git" "$HOME/.config/lazygit" "$HOME/.config/yazi" \
+           "$HOME/.config/nvim/init.lua" "$HOME/.config/tmux/tmux.conf" \
+           "$HOME/.config/sesh/sesh.toml" "$HOME/.config/starship.toml" \
+           "$HOME/.config/atuin/config.toml" "$HOME/.config/git/config" \
+           "$HOME/.config/lazygit/config.yml" "$HOME/.config/yazi/theme.toml" \
            "$HOME/.config/ghostty/config" "$HOME/.config/herdr/config.toml"; do
     if [ -e "$l" ] && real="$(readlink -f "$l" 2>/dev/null)" \
        && case "$real" in "$DOTFILES"/*) true ;; *) false ;; esac; then
       continue
     fi
-    echo "   ✗ not linked into the repo: $l"; _fail=1
+    echo "   ✗ config not loaded from the repo: $l"; _fail=1
   done
 
   [ -d "$HOME/.config/tmux/plugins/tpm" ] || { echo "   ✗ TPM not installed"; _fail=1; }
@@ -220,7 +232,24 @@ verify_install() {
   fi
 
   [ -d "$BACKUP" ] && echo "" && echo "==> Files moved aside are in $BACKUP"
-  return 0
+  return "$_fail"
+}
+
+# The single call both installers end with. Verification used to be advisory:
+# it printed ✗ lines and the script still finished with "Done!" and exit 0, so
+# neither a human skimming the tail nor a CI job could tell a good run from a
+# broken one. Now its result is the script's exit status — while still printing
+# the next-steps block first, since those are useful either way.
+finish_install() {
+  local rc=0
+  run_shared_tail
+  verify_install || rc=1
+  print_next_steps
+  if [ "$rc" -ne 0 ]; then
+    echo "" >&2
+    echo "!! The install is INCOMPLETE — see the ✗ lines under 'Verifying' above." >&2
+  fi
+  return "$rc"
 }
 
 # Closing message. Set NEXT_STEP_FIRST beforehand to prepend a platform-specific
