@@ -55,19 +55,46 @@ fi
 # Optional platform-specific first entry in the closing "Next:" list.
 : "${NEXT_STEP_FIRST:=}"
 
+# Packages the caller's package step could not install, space-separated, folded
+# into verify_install's result. install.sh appends its failed formulae and casks
+# here because both of those steps are deliberately non-fatal, and something has
+# to remember that afterwards. Left empty on Linux: install.linux.sh does its own
+# best-effort accounting (MISSING) and installs fonts itself, so the loop in
+# verify_install that reads this simply has nothing to iterate over there.
+: "${FAILED_PKGS:=}"
+
 # The executable a tool provides, for "is it already here?" checks. Only the
 # cases where the binary name differs from the tool name need an entry.
+#
+# Returns ONE name, because install.linux.sh consumes it as a literal filename —
+# gh_release_bins extracts it out of a release archive. Tools that resolve under
+# more than one name belong in have_tool below, not here.
 bin_name() {
   case "$1" in
     neovim)      echo "nvim" ;;
     ripgrep)     echo "rg" ;;
     git-delta)   echo "delta" ;;
-    sevenzip)    echo "7z" ;;
+    sevenzip)    echo "7z" ;;     # Linux packages ship 7z; macOS ships 7zz, see have_tool
     poppler)     echo "pdftoppm" ;;
     imagemagick) echo "magick" ;;
     ncurses)     echo "tic" ;;
     fontconfig)  echo "fc-cache" ;;
     *)           echo "$1" ;;
+  esac
+}
+
+# Is a tool usable on this machine? Wraps bin_name for the tools that answer to
+# different binaries per platform, where a single mapping is wrong somewhere.
+#
+# sevenzip is the case that forced this: Homebrew's formula installs only 7zz
+# (/opt/homebrew/opt/sevenzip/bin/7zz — there is no 7z), while the Linux packages
+# provide 7z. Checking either name is not a fudge, it is what the consumer does:
+# yazi's archive previewer resolves `try("7zz") or try("7z")`, so either binary
+# means archive previews work.
+have_tool() {
+  case "$1" in
+    sevenzip) command -v 7zz >/dev/null 2>&1 || command -v 7z >/dev/null 2>&1 ;;
+    *)        command -v "$(bin_name "$1")" >/dev/null 2>&1 ;;
   esac
 }
 
@@ -104,12 +131,26 @@ stow_with_backup() {
 
 # Everything from submodules to the sesh import file: identical on both platforms
 # because it only touches this repo and $HOME.
+#
+# Returns non-zero if a step that verify_install can also see went wrong (stow),
+# so finish_install can fold it into the exit status. Steps whose failure is only
+# a degradation — a missing tmux theme, no undercurl — warn and return 0.
 run_shared_tail() {
+  local rc=0
   echo ""
   echo "==> Initialising submodules"
   cd "$DOTFILES" || return 1
   if [ -e "$DOTFILES/.git" ]; then
-    git submodule update --init --recursive
+    # Warn, don't die. This is the first of two network fetches in this function
+    # and it was the only unguarded one: on a captive portal or an offline machine
+    # it exits non-zero, and `set -e` then killed the run before stow, terminfo,
+    # TPM, sesh.local.toml, gh-poi and verify_install — the exact half-applied
+    # install this file's design is meant to prevent. An absent .git, a missing
+    # tic and a failing cask were all already tolerated with a warning; there was
+    # no reason for a fetch to be the one fatal step. All it costs is the
+    # catppuccin/tmux theme, and verification still reports the real state.
+    git submodule update --init --recursive \
+      || echo "   ! submodule fetch failed (offline?) — catppuccin/tmux theme will be absent"
   else
     echo "   ! not a git clone — skipping (catppuccin/tmux theme will be absent)"
   fi
@@ -117,10 +158,14 @@ run_shared_tail() {
   # Stow BEFORE cloning TPM: this makes ~/.config/tmux a symlink into the repo, so
   # the TPM clone below lands at $DOTFILES/tmux/plugins/tpm (gitignored). Cloning
   # first would create a real ~/.config/tmux directory and conflict on tmux.
+  # A stow failure is recorded and carried to the end rather than aborting: the
+  # remaining steps are independent of it, and verify_install names every config
+  # that is not loaded from the repo — a far more useful report than dying on the
+  # first conflict stow could not resolve.
   echo "==> Stowing dotfiles"
   mkdir -p "$HOME/.config"      # stow aborts if --target from .stowrc doesn't exist
-  stow_with_backup "$HOME/.config" .   # nvim, tmux, sesh, ghostty, starship, atuin, git, lazygit, yazi
-  stow_with_backup "$HOME" zsh         # zsh dotfiles live in ~, not ~/.config
+  stow_with_backup "$HOME/.config" . || rc=1   # nvim, tmux, sesh, ghostty, starship, atuin, git, lazygit, yazi
+  stow_with_backup "$HOME" zsh || rc=1         # zsh dotfiles live in ~, not ~/.config
 
   ## herdr is stowignored: it writes runtime state (logs, sockets, session.json)
   ## into ~/.config/herdr, so that directory has to stay a real directory rather
@@ -133,6 +178,27 @@ run_shared_tail() {
   if [ -L "$HOME/.config/herdr" ]; then
     rm -f "$HOME/.config/herdr"
     echo "   ↳ unfolded stow symlink at ~/.config/herdr into a real directory"
+  fi
+  # The same superseded layout left a second link behind: while herdr was still a
+  # stowed package, stow also linked its config.toml straight into ~/.config, as
+  # ~/.config/config.toml → ../dotfiles/herdr/config.toml. Nothing reads that path,
+  # and because stow no longer owns the package no amount of restowing will ever
+  # clean it up — it has to be removed by hand, here.
+  #
+  # Deliberately narrow: only a symlink, and only one resolving into this repo.
+  # ~/.config/config.toml is a plausible name for some other tool's real config, so
+  # anything that is not our own stale link is left strictly alone. Note this is a
+  # different path from ~/.config/herdr/config.toml, which is the correct link and
+  # is (re)created two lines below.
+  if [ -L "$HOME/.config/config.toml" ]; then
+    local stale
+    stale="$(readlink -f "$HOME/.config/config.toml" 2>/dev/null)" || stale=""
+    case "$stale" in
+      "$DOTFILES"/*)
+        rm -f "$HOME/.config/config.toml"
+        echo "   ↳ removed stale stow leftover at ~/.config/config.toml (→ $stale)"
+        ;;
+    esac
   fi
   mkdir -p "$HOME/.config/herdr"
   ln -sfn "$DOTFILES/herdr/config.toml" "$HOME/.config/herdr/config.toml"
@@ -152,7 +218,13 @@ run_shared_tail() {
 
   echo "==> Installing TPM (tmux plugin manager)"
   if [ ! -d "$HOME/.config/tmux/plugins/tpm" ]; then
-    git clone https://github.com/tmux-plugins/tpm "$HOME/.config/tmux/plugins/tpm"
+    # The second network fetch, and non-fatal for the same reason as the submodule
+    # one above: offline, this used to abort the run before sesh.local.toml, gh-poi
+    # and verification ever happened. No warning needed beyond git's own output —
+    # verify_install already checks for the tpm directory and reports a ✗, which is
+    # what makes the exit status right without this step being fatal.
+    git clone https://github.com/tmux-plugins/tpm "$HOME/.config/tmux/plugins/tpm" \
+      || echo "   ! TPM clone failed (offline?) — prefix+I will not work until it is installed"
   else
     echo "   ✓ already present"
   fi
@@ -177,6 +249,8 @@ run_shared_tail() {
     echo "   ! could not install (needs 'gh auth login' first) — run:"
     echo "     gh extension install seachicken/gh-poi"
   fi
+
+  return "$rc"
 }
 
 # The package step alone used to be the only thing reported, so a run that stowed
@@ -184,12 +258,28 @@ run_shared_tail() {
 verify_install() {
   echo ""
   echo "==> Verifying"
-  local _fail=0 tool bin l real
+  local _fail=0 tool pkg l real
 
   for tool in zsh tmux stow neovim ripgrep fzf zoxide bat fd gh lazygit \
               git-delta starship atuin yazi carapace sesh herdr mise jq; do
-    bin="$(bin_name "$tool")"
-    command -v "$bin" >/dev/null 2>&1 || { echo "   ✗ missing binary: $bin ($tool)"; _fail=1; }
+    have_tool "$tool" || { echo "   ✗ missing binary: $(bin_name "$tool") ($tool)"; _fail=1; }
+  done
+
+  # yazi's preview backends, reported but not fatal — yazi itself works without
+  # them, you just lose video thumbnails, archive, PDF and HEIC/JXL previews. They
+  # were absent from this list entirely, which is how they stayed missing on every
+  # rebuild back when they lived in install.local.sh.
+  for tool in ffmpeg sevenzip poppler imagemagick; do
+    have_tool "$tool" || echo "   ! yazi preview backend missing: $tool (previews only)"
+  done
+
+  # Packages the package step could not install. Both of install.sh's package
+  # steps are non-fatal on purpose, so their failures are only visible here — and
+  # a cask like the nerd font has no binary anywhere in the checks above to give it
+  # away. Empty on Linux (see the FAILED_PKGS contract at the top), so this loop
+  # does nothing there.
+  for pkg in ${FAILED_PKGS-}; do
+    echo "   ✗ package did not install: $pkg"; _fail=1
   done
 
   # Check a representative config FILE per package, never the directory.
@@ -242,7 +332,13 @@ verify_install() {
 # the next-steps block first, since those are useful either way.
 finish_install() {
   local rc=0
-  run_shared_tail
+  # `|| rc=1` rather than a bare call, for two reasons. It keeps a failure the tail
+  # reports (stow) out of the "Done!" path, and — because `set -e` does not apply
+  # inside a function whose result is being tested — it is what lets the steps in
+  # there warn and carry on instead of taking the script down mid-way. Both halves
+  # of that are the point: get to verify_install no matter what, and let its
+  # verdict be the exit status.
+  run_shared_tail || rc=1
   verify_install || rc=1
   print_next_steps
   if [ "$rc" -ne 0 ]; then
@@ -254,6 +350,15 @@ finish_install() {
 
 # Closing message. Set NEXT_STEP_FIRST beforehand to prepend a platform-specific
 # step — Linux uses it for the login-shell re-login.
+#
+# The git identity step is here rather than automated because it cannot live in
+# this repo: it is per-machine (work vs personal name and address) and secondly it
+# has to go in ~/.gitconfig, which is NOT stowed. The stowed git package provides
+# ~/.config/git/config, and ~/.gitconfig takes precedence over it — so identity
+# plus the [includeIf "gitdir:..."] rules that switch to a personal identity for
+# certain trees have to be written there to win. Nothing created that file and no
+# step mentioned it, so the first commit on a fresh machine died with "Author
+# identity unknown" and left you guessing. README.md carries the snippet.
 print_next_steps() {
   local n=1 step
   echo ""
@@ -263,6 +368,7 @@ print_next_steps() {
     ${NEXT_STEP_FIRST:+"$NEXT_STEP_FIRST"} \
     "Restart your terminal so the new shell config is loaded." \
     "In tmux, press prefix+I to install plugins." \
+    "Set your git identity in ~/.gitconfig — see the git identity section in README.md." \
     "Run 'gh auth login' so gh (and 'gh poi' branch cleanup) works." \
     "Pick language runtimes: mise use -g node@lts java@corretto-25 go@latest"
   do
