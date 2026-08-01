@@ -56,8 +56,21 @@ command -v starship &>/dev/null && eval "$(starship init zsh)"
 # Zoxide (smart cd)
 command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 
-# Atuin shell history
-[ -s "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env"
+# Atuin shell history.
+#
+# The official curl installer drops a binary in ~/.atuin/bin and an env script
+# that PREPENDS that directory to PATH — so on a machine where atuin also comes
+# from brew/apt (which is what install.sh declares), the installer's copy can
+# shadow the packaged one. The two then share ~/.local/share/atuin/history.db,
+# and the moment the packaged atuin is upgraded it migrates that database past
+# what the older shadow copy understands:
+#   Error: migration <id> was previously applied but is missing in the resolved migrations
+#
+# So only fall back to the installer's copy when no packaged atuin exists — which
+# is exactly the case install.linux.sh's own fallback hint creates on a distro
+# that doesn't package atuin. Guarded, not deleted.
+command -v atuin &>/dev/null \
+  || { [ -s "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env" }
 command -v atuin &>/dev/null && eval "$(atuin init zsh)"
 
 # mise — unified runtime/version manager (node, java, python, …). Activating it
