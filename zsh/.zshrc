@@ -295,6 +295,8 @@ wtc() {
     echo "usage: wtc <branch-name>" >&2
     return 1
   fi
+  local current_branch
+  current_branch="$(git branch --show-current 2>/dev/null)"
   local wt_main wt_repo wt_parent wt_sani wt_dir wt_session
   _wt_paths "$branch" \
     || { echo "wtc: not inside a git repository" >&2; return 1; }
@@ -316,9 +318,11 @@ wtc() {
     # branch off your own HEAD, with no upstream, instead of their work — you then
     # committed on the wrong base and the first push rejected or clobbered. The
     # DWIM form goes first so an existing remote branch is tracked; -b is the
-    # fallback for a genuinely new branch.
+    # fallback for a genuinely new branch. When creating fresh, branch from the
+    # calling worktree's current branch so the new branch starts there — not from
+    # the main checkout's HEAD, which would include unrelated main commits.
     git worktree add "$dir" "$branch" 2>/dev/null \
-      || git worktree add -b "$branch" "$dir" \
+      || git worktree add -b "$branch" "$dir" "${current_branch:-HEAD}" \
       || { echo "wtc: could not create worktree at $dir" >&2; return 1; }
   fi
   _wt_sync_excludes
@@ -426,6 +430,8 @@ wth() {
   fi
   command -v jq &>/dev/null \
     || { echo "wth: jq is required (brew install jq)" >&2; return 1; }
+  local current_branch
+  current_branch="$(git branch --show-current 2>/dev/null)"
   local wt_main wt_repo wt_parent wt_sani wt_dir wt_session
   _wt_paths "$branch" \
     || { echo "wth: not inside a git repository" >&2; return 1; }
@@ -440,7 +446,13 @@ wth() {
     if [[ -d "$dir" ]]; then
       out=$(herdr worktree open --path "$dir" --label "$label" 2>&1)
     else
-      out=$(herdr worktree create --branch "$branch" --path "$dir" --label "$label" 2>&1)
+      # Pre-create the branch at the calling worktree's HEAD so herdr picks it up
+      # rather than branching from main. herdr's --base flag does not reliably set
+      # the git branch base; doing it ourselves first means `git worktree add`
+      # (which herdr runs internally) simply checks out the already-positioned branch.
+      [[ -n "$current_branch" ]] && git branch "$branch" "$current_branch" 2>/dev/null
+      local -a create_args=(--branch "$branch" --path "$dir" --label "$label")
+      out=$(herdr worktree create "${create_args[@]}" 2>&1)
     fi
     workspace_id=$(print -r -- "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
     if [[ -z "$workspace_id" ]]; then
