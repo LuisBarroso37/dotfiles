@@ -139,7 +139,7 @@ this file):
 | Next occurrence of word under cursor | `*` |
 | Same, partial match (no word boundaries) | `g*` |
 | Jump to the matching bracket | `%` |
-| Flash jump (leap anywhere on screen) | `s` then 2 chars |
+| Find surrounding (mini.surround) | `sf` / `sF` (next / prev) |
 | Back / forward (jump list) | `Ctrl+o` / `Ctrl+i` |
 | Open link / path under cursor in system handler | `gx` |
 | Open the file whose path is under the cursor | `gf` |
@@ -293,6 +293,19 @@ isn't what you want:
 > Pick any lowercase letter as the register — `h` is just a habit. Recording
 > into an UPPERCASE letter (`qH`) **appends** to that macro instead of replacing it.
 
+### Surround (mini.surround)
+
+> Surroundings: `"`, `'`, `` ` ``, `(`, `)`, `[`, `]`, `{`, `}`, `<tag>`.
+
+| Action | Key |
+|--------|-----|
+| Add surrounding (visual) | select text, then `sa"` / `sa)` etc. |
+| Add surrounding (motion) | `saiw"` — inner word; `saaw"` — around word |
+| Delete surrounding | `sd"` — delete surrounding `"` |
+| Replace surrounding | `sr"'` — change `"` to `'` |
+| Find next / prev surrounding | `sf` / `sF` |
+| Highlight surrounding | `sh` |
+
 ### LSP
 
 | Action | Key |
@@ -328,23 +341,22 @@ isn't what you want:
 | Action | Key |
 |--------|-----|
 | Open Lazygit | `<leader>gg` |
-| Diff current file (hunks picker) | `<leader>gd` |
-| **Diff file vs merge-base with main** (editable) | `<leader>gr` |
-| Diff file vs index (editable) | `<leader>ghd` |
-| Diff file vs `HEAD~` (editable) | `<leader>ghD` |
-| History: current file | `<leader>gf` |
-| History: whole repo | `<leader>gl` |
-| Blame current line | `<leader>gb` |
+| Diff current file (hunks) | `<leader>gd` |
+| **Review branch vs main** (tracked, pre-push) | `<leader>gr` |
+| Uncommitted changes, incl. untracked (pre-commit) | `<leader>gv` |
+| Close Diffview | `<leader>gV` |
+| History: file (follows renames) | `<leader>gH` |
+| History: selected range (visual mode) | `<leader>gH` |
+| History: current line | `<leader>gL` |
+| History: whole repo | `<leader>gA` |
+| Git log picker (snacks) | `<leader>gl` |
+| Git file history picker (snacks) | `<leader>gf` |
 | Toggle deleted lines inline (gitsigns) | `<leader>gtd` |
 | Toggle word diff (gitsigns) | `<leader>gtw` |
 
-> The three diff mappings open Neovim's **native** side-by-side diff (gitsigns
-> `diffthis`): the left window is the base and is read-only, the right window is
-> your real buffer — so you can **edit against the diff** and `:w` as usual.
-> `]c` / `[c` jump hunks, `do` / `dp` obtain/put a change, `:q` on the left
-> window closes the diff. For a read-only whole-branch review, use
-> `git diff main...HEAD` in the shell (delta renders it side-by-side) or a
-> fullscreen Lazygit diff.
+> Diffview mappings (`gr` / `gv` / `gV` / `gH` / `gL` / `gA`) open in their own
+> tab — see the **Diffview** section below for navigating inside it.
+> `gl` / `gf` open Snacks pickers instead.
 
 ### Misc
 
@@ -434,3 +446,65 @@ isn't what you want:
 | Pull | `p` |
 | Push | `P` (offers force-push if the remote has diverged) |
 | Fetch | `f` |
+
+---
+
+## Diffview
+
+> Neovim git-review UI (file panel + side-by-side diffs). Independent of Lazygit
+> — use Lazygit to stage/commit, Diffview to review. Open with the `<leader>g`
+> mappings below; press `g?` inside any panel for full help.
+
+### When to use which
+
+| Goal | Mapping | Shows |
+|------|---------|-------|
+| Review the whole branch before pushing / for a PR | `<leader>gr` | Working tree vs merge-base with `main`: committed + staged + unstaged **tracked** changes. **No untracked files** (git can't diff those against a commit). |
+| Review before committing | `<leader>gv` | Working tree vs index: unstaged + staged + **untracked new files** (the only view that includes new files). |
+| Close the review | `<leader>gV` | — |
+
+### History (shows the actual diff at each change, like `git log -L`)
+
+| Action | Mapping |
+|--------|---------|
+| File history (follows renames) | `<leader>gH` (normal) |
+| History of a selected range | `<leader>gH` (visual) |
+| History of the current line | `<leader>gL` |
+| Whole-repo history | `<leader>gA` |
+
+### Navigating the file panel
+
+| Action | Key |
+|--------|-----|
+| Next / prev file entry (move cursor) | `j` / `k` |
+| Open diff for selected entry | `<Enter>` / `o` / `l` |
+| Open diff for **next / prev** file | `<Tab>` / `<Shift+Tab>` |
+| First / last file | `[F` / `]F` |
+| Stage / unstage entry | `-` or `s` |
+| Stage all / unstage all | `S` / `U` |
+| Restore entry (discard changes) | `X` |
+| Toggle list ↔ tree view | `i` |
+| Refresh | `R` |
+| Open commit log panel | `L` |
+| Open the file (leave the diff) | `gf` |
+| Open file in new split / tab | `Ctrl+w Ctrl+f` / `Ctrl+w gf` |
+| Focus file panel | `<leader>e` |
+| Help (all keymaps) | `g?` |
+
+### Inside the diff windows
+
+| Action | Key |
+|--------|-----|
+| Next / prev changed hunk | `]c` / `[c` |
+| Switch between base (left) & working (right) | `Ctrl+w h` / `Ctrl+w l` |
+| Next / prev file | `<Tab>` / `<Shift+Tab>` |
+| Focus / toggle file panel | `<leader>e` / `<leader>b` |
+
+### File-history panel
+
+| Action | Key |
+|--------|-----|
+| Next / prev commit entry | `j` / `k` |
+| Open diff for the commit | `<Enter>` / `o` |
+| Open commit details | `L` |
+| Copy commit hash | `y` |
