@@ -157,10 +157,18 @@ _wt_paths() {
   wt_session="$wt_repo/$wt_sani"
 }
 
-# Delete <branch> only if git can prove it is safe. Squash/rebase-merged branches
-# have no ancestry to prove, so `-d` refuses them — `gh poi` sweeps those, asking
-# the GitHub API whether the PR actually merged rather than guessing from local
-# state (`gh extension install seachicken/gh-poi`).
+# Delete <branch> only if it is safe to do so.
+#
+# Strategy (three-tier):
+#   1. Ancestry check — `git merge-base --is-ancestor` catches fast-forward and
+#      real merge commits. If the branch tip is a direct ancestor of the default
+#      branch, `git branch -d` is safe and we run it.
+#   2. GitHub PR check — squash and rebase merges create new SHAs, so the branch
+#      tip is never a direct ancestor even after the PR lands. We fall back to
+#      `gh pr view` which asks the GitHub API for the true merge state. If MERGED,
+#      we force-delete with `-D` (safe: the changes are confirmed upstream).
+#   3. Keep + hint — if neither check confirms a merge (PR still open, `gh` absent,
+#      no remote), we leave the branch alone and say so.
 #
 # `git branch -d` alone is NOT the safety proof it looks like: it deletes a branch
 # merged into *its own upstream*, not into the default branch. On a pushed branch
@@ -180,16 +188,32 @@ _wt_drop_branch() {
   else
     ref=""
   fi
-  if [[ -n "$ref" ]] && ! git merge-base --is-ancestor "$1" "$ref" 2>/dev/null; then
-    print -r -- "• kept branch '$1' (not merged into $ref — run 'gh poi' once its PR lands)"
+
+  # Tier 1: direct ancestry (fast-forward or merge commit).
+  if [[ -z "$ref" ]] || git merge-base --is-ancestor "$1" "$ref" 2>/dev/null; then
+    if out="$(git branch -d "$1" 2>&1)"; then
+      print -r -- "✓ deleted branch '$1'"
+    else
+      print -r -- "• kept branch '$1' (git refused — $out)"
+    fi
     return 0
   fi
-  if out="$(git branch -d "$1" 2>&1)"; then
-    print -r -- "✓ deleted branch '$1'"
-  else
-    print -r -- "• kept branch '$1' (squash/rebase-merged — run 'gh poi' to clean up)"
-    [[ -n "$out" ]] && print -r -- "  $out"
+
+  # Tier 2: squash/rebase merge — branch tip is not a direct ancestor, but the
+  # PR may have merged via squash or rebase. Ask GitHub for the true state.
+  if command -v gh &>/dev/null; then
+    local state
+    state="$(gh pr view "$1" --json state --jq '.state' 2>/dev/null)"
+    if [[ "$state" == "MERGED" ]]; then
+      git branch -D "$1" >/dev/null 2>&1 \
+        && print -r -- "✓ deleted branch '$1' (squash/rebase-merged — confirmed via GitHub)" \
+        || print -r -- "• could not delete '$1' — try: git branch -D '$1'"
+      return 0
+    fi
   fi
+
+  # Tier 3: no proof of merge — leave it alone.
+  print -r -- "• kept branch '$1' (not merged into $ref — run 'gh poi' once its PR lands)"
 }
 
 # Keep nested worktrees out of the main checkout's `git status`.
