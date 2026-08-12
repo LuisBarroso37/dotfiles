@@ -6,12 +6,12 @@ vim.opt.smoothscroll = false -- LazyVim enables this but it breaks <C-d>zz / <C-
 -- NOTE: snacks.scroll (LazyVim default) breaks the same centering via its scroll
 -- animation -- disabled in lua/plugins/snacks.lua.
 
--- netrw is left alone, and `nvim .` is left to the snacks explorer's directory
--- hijack (the LazyVim default). The previous netrw disable + UIEnter dashboard
--- reconstruction existed only because snacks' hijack had been switched off; with
--- the explorer enabled in lua/plugins/snacks.lua, both are unnecessary.
+-- netrwPlugin is disabled in lazy.lua (snacks' replace_netrw=false no longer
+-- does it). Without both disabled, `nvim .` would open netrw. With both off,
+-- snacks dashboard's built-in argc skip (only when explorer.enabled) makes
+-- the dashboard appear normally for a directory arg too.
 --   nvim    -> dashboard
---   nvim .  -> snacks explorer tree
+--   nvim .  -> dashboard (explorer still available via <leader>e)
 
 -- Load a project's own `.nvim.lua` / `.nvimrc` / `.exrc` from the cwd. This is
 -- what keeps repo-specific editor config (LSP heap sizes, lint rules that only
