@@ -131,13 +131,26 @@ unset _formulae
 # ended in "✓ all checks passed" and exit 0 while the prompt, tmux status line and
 # yazi UI were full of tofu — a font has no binary for verify_install to look for.
 # Recording it in FAILED_PKGS is how verification learns about it.
-for _cask in ghostty font-jetbrains-mono-nerd-font; do
+for _cask in ghostty font-jetbrains-mono-nerd-font karabiner-elements rectangle; do
   brew install --cask --adopt "$_cask" || {
     FAILED_PKGS+=" $_cask"
     echo "!! cask '$_cask' did not install — continuing without it." >&2
   }
 done
 unset _cask
+
+# Karabiner-Elements: ~/.config/karabiner/ must stay a real directory — Karabiner
+# writes runtime state (automatic_backups/, assets/, log/) into it at startup, so
+# stow cannot own the directory. Symlink only the config file.
+echo "==> Wiring karabiner config"
+mkdir -p "$HOME/.config/karabiner"
+ln -sfn "$DOTFILES/macos/karabiner/karabiner.json" "$HOME/.config/karabiner/karabiner.json"
+
+# Rectangle: RectangleConfig.json is Rectangle's own export format, not a standard
+# plist — defaults import does not apply. Import via the URL scheme instead; open
+# launches Rectangle in the background (-g) if it is not already running.
+echo "==> Importing Rectangle config"
+open -g "rectangle://import?url=file://$DOTFILES/macos/rectangle/RectangleConfig.json"
 
 # Optional per-machine install steps (extra packages, yazi's preview deps, etc.)
 # live in an untracked install.local.sh next to this script — sourced here if it

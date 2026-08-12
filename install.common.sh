@@ -324,6 +324,17 @@ verify_install() {
     echo "   ✗ config not loaded from the repo: $l"; _fail=1
   done
 
+  # macOS-only symlinks — not checked on Linux where karabiner-elements does not exist.
+  if [ "$(uname -s)" = "Darwin" ]; then
+    for l in "$HOME/.config/karabiner/karabiner.json"; do
+      if [ -e "$l" ] && real="$(readlink -f "$l" 2>/dev/null)" \
+         && case "$real" in "$DOTFILES"/*) true ;; *) false ;; esac; then
+        continue
+      fi
+      echo "   ✗ config not loaded from the repo: $l"; _fail=1
+    done
+  fi
+
   [ -d "$HOME/.config/tmux/plugins/tpm" ] || { echo "   ✗ TPM not installed"; _fail=1; }
   [ -f "$HOME/.config/sesh.local.toml" ]  || { echo "   ✗ sesh.local.toml missing"; _fail=1; }
   infocmp xterm-256color-undercurl >/dev/null 2>&1 \
