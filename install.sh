@@ -151,7 +151,12 @@ ln -sfn "$DOTFILES/macos/karabiner/karabiner.json" "$HOME/.config/karabiner/kara
 # plist — defaults import does not apply. Import via the URL scheme instead; open
 # launches Rectangle in the background (-g) if it is not already running.
 echo "==> Importing Rectangle config"
-open -g "rectangle://import?url=file://$DOTFILES/macos/rectangle/RectangleConfig.json"
+# || true: `open` exits non-zero when no app is registered for the rectangle://
+# scheme (i.e. the cask above failed). Under `set -e` an unguarded failure here
+# aborts the script before finish_install runs — nothing stowed, no verification,
+# no error banner. A failed cask is already captured in FAILED_PKGS from the loop
+# above; this import is best-effort and needs no separate accounting.
+open -g "rectangle://import?url=file://$DOTFILES/macos/rectangle/RectangleConfig.json" || true
 
 # Optional per-machine install steps (extra packages, yazi's preview deps, etc.)
 # live in an untracked install.local.sh next to this script — sourced here if it
@@ -159,7 +164,9 @@ open -g "rectangle://import?url=file://$DOTFILES/macos/rectangle/RectangleConfig
 if [ -f "$DOTFILES/install.local.sh" ]; then
   echo "==> Running install.local.sh (machine-specific)"
   # shellcheck source=/dev/null
-  source "$DOTFILES/install.local.sh"
+  # || true: failures inside install.local.sh must not abort before finish_install
+  # runs — without this, set -e would skip stow, terminfo, TPM, and verify_install.
+  source "$DOTFILES/install.local.sh" || true
 fi
 
 finish_install

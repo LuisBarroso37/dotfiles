@@ -26,6 +26,8 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [mise](https://mise.jdx.dev) | `~/.config/mise/config.toml` (untracked) | Runtime version manager (node, go, java, …) |
 | [herdr](https://herdr.dev) | `.config/herdr/config.toml` | Agent workspace multiplexer (owns `Ctrl+a`; drives `wth`/`wthr`) |
 | [jq](https://jqlang.github.io/jq/) | — | JSON processor — **required** by the `wth`/`wthr` worktree helpers |
+| [karabiner-elements](https://karabiner-elements.pqrs.org) | `macos/karabiner/karabiner.json` | **macOS only** — keyboard remapping (caps lock → escape/ctrl, etc.) |
+| [rectangle](https://rectangleapp.com) | `macos/rectangle/RectangleConfig.json` | **macOS only** — window manager (snap windows to halves, corners, etc.) |
 
 ---
 

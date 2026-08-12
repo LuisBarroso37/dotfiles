@@ -6,9 +6,8 @@
 # or not anything is actually wrong. This script is the half of that question
 # that CAN pass. Everything here is binary and mechanical: it either exits 0 or
 # it names a specific broken thing. Judgement calls — dead config, deprecated
-# keys, whether a design could be simpler — deliberately live in REVIEW-LOG.md
-# instead, because a script cannot decide them and pretending otherwise just
-# moves the unbounded question inside the tool.
+# keys, whether a design could be simpler — these are not scriptable and belong
+# in a review session, not in an automated gate.
 #
 # Deliberately NOT duplicated here:
 #   * link/deploy health per stow class → the `dotfiles-doctor` skill owns that
@@ -93,7 +92,9 @@ detail() { [ "$VERBOSE" -eq 1 ] && printf '    %s%s%s\n' "$C_DIM" "$1" "$C_OFF";
 # Pinning stdin makes the probes independent of however they were invoked.
 in_pty() {
   if [ "$(uname -s)" = "Darwin" ]; then
-    script -q /dev/null "$@" </dev/null 2>&1
+    # -e: propagate the child's exit status (supported on macOS script since
+    # Monterey; without it $? is always 0 — hung-process checks never fire).
+    script -qe /dev/null "$@" </dev/null 2>&1
   else
     script -qec "$*" /dev/null </dev/null 2>&1
   fi
@@ -175,7 +176,12 @@ derived_or_fail() {
 # not a new opinion — every entry here was deleted on purpose and the commit
 # message says why. Keep the list short and only add things whose removal was
 # intentional and final.
-REMOVED_TOKENS="pyenv diffview wtclean migrate.sh"
+# Note: `diffview` was removed (c582fa7) and added to this list, but
+# `diffview-plus.nvim` (dlyongemallo/diffview-plus.nvim) was subsequently
+# added intentionally (f0d5ab5) as a maintained fork. The token `diffview`
+# matched both and caused a false positive on the cheatsheet and lazy-lock.json.
+# Removed from REMOVED_TOKENS — a diffview variant is back by design.
+REMOVED_TOKENS="pyenv wtclean migrate.sh"
 
 # Files that must never be tracked: machine-local, secret, or runtime state.
 # The repo promises these are gitignored; this asserts the promise.
@@ -217,7 +223,7 @@ if command -v zsh >/dev/null 2>&1; then
     | sed $'s/\033\[[0-9;?]*[a-zA-Z]//g' | sed 's/\^D//g' \
     | grep -v '^[[:space:]]*$' || true)"
   zsh_errs="$(printf '%s\n' "$zsh_clean" \
-    | grep -iE 'not found|no such file|parse error|bad pattern|permission denied|insecure director' || true)"
+    | grep -iE 'not found|no such file|parse error|bad pattern|permission denied|insecure director|error:|failed|cannot' || true)"
   if [ "$zsh_rc" -eq 124 ]; then
     fail "zsh -i hung (killed after 30s)"
   elif [ "$zsh_rc" -ne 0 ]; then
@@ -431,7 +437,9 @@ if [ -f "$DOTFILES/install.common.sh" ]; then
   # installs. Deriving the full list catches the drift case: a formula added to
   # install.sh but never added to the verify list, so a machine missing it
   # still reports a clean install.
-  if derived_or_fail "install.sh formula list" "$BREW_PKGS"; then
+  if [ "$(uname -s)" != "Darwin" ]; then
+    skip "BREW_PKGS check (install.sh is macOS-only — formula names differ on Linux)"
+  elif derived_or_fail "install.sh formula list" "$BREW_PKGS"; then
     missing=""
     for pkg in $BREW_PKGS; do
       # Prefer install.common.sh's own have_tool when it exists: it knows about
@@ -453,11 +461,28 @@ else
   fail "install.common.sh missing"
 fi
 
+# On macOS only: verify the karabiner config symlink. It is not stowed —
+# Karabiner writes runtime state (backups, assets, logs) into ~/.config/karabiner/
+# so stow cannot fold that directory, and install.sh links only karabiner.json by hand.
+# Neither stow_deploys nor verify_install catches this file. Guarded on Darwin so
+# Linux C4 runs are unaffected (Linux machines never have this path).
+if [ "$(uname -s)" = "Darwin" ]; then
+  if [ -L "$HOME/.config/karabiner/karabiner.json" ]; then
+    _kara_real="$(readlink -f "$HOME/.config/karabiner/karabiner.json" 2>/dev/null)"
+    case "$_kara_real" in
+      "$DOTFILES"/*) ok "$HOME/.config/karabiner/karabiner.json → repo" ;;
+      *) fail "$HOME/.config/karabiner/karabiner.json resolves outside the repo ($_kara_real)" ;;
+    esac
+  else
+    fail "$HOME/.config/karabiner/karabiner.json missing or not a symlink (run ./install.sh)"
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # C5 — Doc closure
 # ---------------------------------------------------------------------------
 # Mechanical half only: every worktree helper the docs name must exist. The full
-# both-directions doc audit is judgement work and lives in REVIEW-LOG.md.
+# both-directions doc audit is judgement work for a review session.
 
 criterion "C5 — doc closure (mechanical subset)"
 
@@ -504,8 +529,8 @@ if [ -n "$herdr_prefix" ] && [ -f tmux/tmux.conf ]; then
   for key in $(grep -oE '^[[:space:]]*bind(-key)?[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*"?([A-Za-z|_-])"?' \
       tmux/tmux.conf 2>/dev/null | awk '{print $NF}' | tr -d '"' | sort -u); do
     case " $herdr_keys " in *" $key "*) continue ;; esac
-    hits="$(git grep -n -F -- "$hp_long $key" -- ':!check.sh' ':!REVIEW-LOG.md' 2>/dev/null || true)"
-    hits="$hits$(git grep -n -F -- "$hp_short $key" -- ':!check.sh' ':!REVIEW-LOG.md' 2>/dev/null || true)"
+    hits="$(git grep -n -F -- "$hp_long $key" -- ':!check.sh' 2>/dev/null || true)"
+    hits="$hits$(git grep -n -F -- "$hp_short $key" -- ':!check.sh' 2>/dev/null || true)"
     [ -n "$hits" ] && misattributed="$misattributed
 $key: $hits"
   done
@@ -535,7 +560,7 @@ for token in $REMOVED_TOKENS; do
   # config. Filtering on the comment marker keeps the check from arguing with
   # the repo's own history.
   hits="$(git grep -n -i -- "$token" -- \
-    ':!check.sh' ':!REVIEW-LOG.md' 2>/dev/null \
+    ':!check.sh' 2>/dev/null \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(--|#|//)' || true)"
   if [ -n "$hits" ]; then
     fail "'$token' was removed deliberately but still appears:"
@@ -551,7 +576,9 @@ done
 
 criterion "C8 — script syntax and lint"
 
-for f in install.sh install.common.sh install.linux.sh check.sh; do
+# check.sh is excluded from the bash -n loop: a running script can't usefully
+# check its own syntax — if we got here, bash already parsed it successfully.
+for f in install.sh install.common.sh install.linux.sh; do
   [ -f "$f" ] || continue
   if bash -n "$f" 2>/dev/null; then
     ok "bash -n $f"
@@ -681,7 +708,7 @@ fi
 printf '\n%s──────%s\n' "$C_DIM" "$C_OFF"
 if [ "$FAILS" -eq 0 ]; then
   printf '%sPASS%s — %d warning(s), %d skipped\n' "$C_OK" "$C_OFF" "$WARNS" "$SKIPS"
-  printf '%sJudgement-based criteria (dead config, deprecated keys, simplification)\nare not scriptable — see REVIEW-LOG.md for their last review date.%s\n' \
+  printf '%sJudgement-based criteria (dead config, deprecated keys, simplification)\nare not scriptable — run a manual review session for those.%s\n' \
     "$C_DIM" "$C_OFF"
   exit 0
 else

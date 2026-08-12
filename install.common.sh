@@ -45,7 +45,10 @@ if [ "$(id -u)" -eq 0 ] && [ -z "${DOTFILES_ALLOW_ROOT:-}" ]; then
   echo "   (It calls sudo itself for the package installs.)" >&2
   echo "   Genuinely provisioning a root account? DOTFILES_ALLOW_ROOT=1 overrides." >&2
   unset _self
-  exit 1
+  # `return` rather than `exit`: this file is always sourced, never executed
+  # directly. `exit` in a sourced file terminates the parent shell process —
+  # callers that wrap the source in `if source ...; then` cannot catch it.
+  return 1
 fi
 
 # Where anything stow refuses to overwrite gets moved instead of clobbered.

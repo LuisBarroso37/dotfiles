@@ -2,4 +2,6 @@ theme = Catppuccin Mocha
 font-family = "JetBrainsMono Nerd Font"
 mouse-hide-while-typing = true
 # Needed for Alt+j/k (move line) in neovim; ghostty's default leaves Option as Option.
+# macOS-only key: Ghostty on Linux will warn/error on this. If this config is ever
+# stowed on a Linux machine, move this to a platform-specific include.
 macos-option-as-alt = true

@@ -9,7 +9,6 @@
 --ignore=install.*\.sh
 --ignore=cheatsheet\.md
 --ignore=check\.sh
---ignore=REVIEW-LOG\.md
 --ignore=\.stowrc
 --ignore=\.DS_Store
 --ignore=zsh

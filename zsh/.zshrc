@@ -13,7 +13,18 @@ if [[ -n "$HERDR_PANE_ID$HERDR_WORKSPACE_ID" && "$TERM" == "xterm-256color" ]] \
 fi
 
 # Carapace completions
-autoload -Uz compinit && compinit
+# Rebuild .zcompdump at most once per day; use the cached dump otherwise.
+# Without the freshness check, compinit scans all $fpath on every shell start
+# — measurable overhead with carapace, mise, atuin, fzf, sesh, zoxide all
+# contributing completions. The (N.mh+24) glob qualifier matches the dump
+# only when it is older than 24 hours; requires EXTENDED_GLOB (set by compinit
+# itself via -U, but the glob runs before that, so we enable it inline).
+autoload -Uz compinit
+if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
+  compinit
+else
+  compinit -C
+fi
 export CARAPACE_BRIDGES='zsh,bash'
 zstyle ':completion:*' format $'\e[2;37mCompleting %d\e[m'
 command -v carapace &>/dev/null && source <(carapace _carapace)
@@ -454,6 +465,8 @@ wth() {
   fi
   command -v jq &>/dev/null \
     || { echo "wth: jq is required (brew install jq)" >&2; return 1; }
+  command -v herdr &>/dev/null \
+    || { echo "wth: herdr is required — see herdr.dev" >&2; return 1; }
   local current_branch
   current_branch="$(git branch --show-current 2>/dev/null)"
   local wt_main wt_repo wt_parent wt_sani wt_dir wt_session
@@ -512,6 +525,8 @@ wthr() {
   _wt_refuse_default "$branch" wthr || return 1
   command -v jq &>/dev/null \
     || { echo "wthr: jq is required (brew install jq)" >&2; return 1; }
+  command -v herdr &>/dev/null \
+    || { echo "wthr: herdr is required — see herdr.dev" >&2; return 1; }
   local wt_main wt_repo wt_parent wt_sani wt_dir wt_session
   _wt_paths "$branch" \
     || { echo "wthr: not inside a git repository" >&2; return 1; }
@@ -576,7 +591,11 @@ wtrebase() {
 
 # Yazi — cd into last directory on exit
 function y() {
-	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+	# `local var="$(cmd)"` always returns 0 — local is a builtin and masks the
+	# command substitution's exit status. Split the declaration so a mktemp
+	# failure propagates and we never pass --cwd-file= with an empty path.
+	local tmp cwd
+	tmp="$(mktemp "${TMPDIR:-/tmp}/yazi-cwd.XXXXXX")" || return 1
 	yazi "$@" --cwd-file="$tmp"
 	if cwd="$(command cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
 		builtin cd -- "$cwd"

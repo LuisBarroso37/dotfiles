@@ -77,8 +77,10 @@ source "$DOTFILES/install.common.sh"
 # only surfaces when something actually fails. NOT /dev/null: the old script sent
 # stderr there too, which swallowed sudo's password prompt and made the install
 # look like it had hung.
-LOG="${TMPDIR:-/tmp}/dotfiles-install.$$.log"
-: > "$LOG"
+# mktemp instead of $$: PIDs are predictable on older kernels and a pre-created
+# symlink at a PID-named path would cause > "$LOG" to truncate whatever the symlink
+# points at, then >> "$LOG" to append to it — a TOCTOU write-anywhere primitive.
+LOG="$(mktemp)"
 
 MISSING=()     # tools no repo could provide → reported at the end with a recipe
 UNVERIFIED=()  # GitHub-release downloads no upstream checksum covered → also reported
@@ -185,11 +187,11 @@ pkg_name() { # map a tool to this PM's package name (differences are the excepti
     fd)          case "$PM" in apt|dnf) echo "fd-find" ;; *) echo "fd" ;; esac ;;
     # Arch ships GitHub's CLI as github-cli, not gh.
     gh)          case "$PM" in pacman) echo "github-cli" ;; *) echo "gh" ;; esac ;;
-    # dnf takes the same 7zip package as Arch, NOT p7zip: Fedora's p7zip only
-    # ever installed /usr/bin/7za, never the 7z that yazi (and bin_name) look
-    # for, and it is dropped from the distro entirely in f44+. apt keeps
-    # p7zip-full — transitional on Debian 13, where it pulls 7zip — because on
-    # every apt release it ends up providing /usr/bin/7z.
+    # dnf: `7zip` is in RPM Fusion (nonfree) on Fedora, NOT in standard repos or
+    # EPEL. Without RPM Fusion enabled, dnf install 7zip fails and falls through
+    # to gh_release_install (sevenzip has no gh_release_repo entry, so it ends
+    # up in MISSING with the hint "yazi archive previews only" — correct outcome).
+    # apt keeps p7zip-full which on Debian 13+ pulls 7zip transitionally.
     sevenzip)    case "$PM" in apt) echo "p7zip-full" ;; *) echo "7zip" ;; esac ;;
     poppler)     case "$PM" in pacman) echo "poppler" ;; *) echo "poppler-utils" ;; esac ;;
     imagemagick) case "$PM" in dnf) echo "ImageMagick" ;; *) echo "imagemagick" ;; esac ;;
@@ -257,7 +259,11 @@ case "$PM" in
     # the one thing this whole script exists to do — was unobtainable. Fedora
     # has no epel-release package (it doesn't need one), so a failure here is
     # the normal case on Fedora and is deliberately ignored.
-    $SUDO dnf install -y epel-release >>"$LOG" 2>&1 </dev/null || true ;;
+    # Failure on Fedora (no epel-release package) is expected and ignored.
+    # Failure on RHEL/Rocky/Alma means EPEL-only tools (stow, fzf, bat, fd,
+    # ripgrep, zoxide, atuin) won't be found in any repo — warn visibly.
+    $SUDO dnf install -y epel-release >>"$LOG" 2>&1 </dev/null \
+      || { [ "$PM" = dnf ] && echo "!! EPEL setup failed — EPEL packages may not install (see $LOG)" >&2; true; } ;;
   *)      : ;;  # pacman refreshes implicitly on install
 esac
 
@@ -528,7 +534,10 @@ gh_release_install() {
       root="$(dirname "$(dirname "$f")")"
       mkdir -p "$HOME/.local/opt"
       rm -rf "$HOME/.local/opt/nvim"
-      mv "$root" "$HOME/.local/opt/nvim"
+      # cp+rm instead of mv: mv fails with EXDEV when /tmp and $HOME are on
+      # different filesystems (tmpfs /tmp + separate /home volume). Under set -e
+      # that aborts the whole script; cp crosses filesystem boundaries safely.
+      cp -r "$root" "$HOME/.local/opt/nvim" && rm -rf "$root"
       ln -sfn "$HOME/.local/opt/nvim/bin/nvim" "$HOME/.local/bin/nvim"
       rc=0
     fi
@@ -720,6 +729,12 @@ fi
 # installer only when the loop above couldn't get it.
 if ! command -v mise >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/mise" ]; then
   echo "==> Installing mise via its own installer"
+  # Security note: this is the one tool not installed via gh_release_install.
+  # mise publishes single-binary releases on GitHub (jdx/mise), but the distro
+  # packages cover Arch and the fallback path here handles the rest; converting
+  # to gh_release_install would require adding mise to gh_release_repo() and
+  # gh_release_bins(). For now the install is tracked in UNVERIFIED[].
+  UNVERIFIED+=("mise — installed via curl https://mise.run | sh (no checksum; use GH_TOKEN env or convert to gh_release_install to verify)")
   if curl -fsSL https://mise.run | sh >>"$LOG" 2>&1; then
     # Rebuilt element by element, because the old MISSING=("${MISSING[@]/mise}")
     # did NOT remove anything: ${arr[@]/pat} is a substitution, so it replaced
@@ -812,6 +827,11 @@ elif command -v curl >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1; then
   then
     rm -f "$_fontdir/JetBrainsMono.zip"
     fc-cache -f >>"$LOG" 2>&1 || true
+    # The /releases/latest/download/ redirect carries no version number, so
+    # there is no portable way to locate the matching SHA256SUMS without a
+    # separate API call. Recorded here for transparency — consistent with how
+    # gh_release_install handles tools whose upstream publishes no sum.
+    UNVERIFIED+=("JetBrainsMono Nerd Font — ryanoasis/nerd-fonts publishes SHA256SUMS but this download uses the /releases/latest/download/ redirect without a checksum step")
     echo "   ✓ installed to $_fontdir"
   else
     rm -f "$_fontdir/JetBrainsMono.zip"
@@ -907,7 +927,9 @@ if [ -f "$DOTFILES/install.local.sh" ]; then
   echo ""
   echo "==> Running install.local.sh (machine-specific)"
   # shellcheck source=/dev/null
-  source "$DOTFILES/install.local.sh"
+  # || true: failures inside install.local.sh must not abort before finish_install
+  # runs — without this, set -e would skip stow, terminfo, TPM, and verify_install.
+  source "$DOTFILES/install.local.sh" || true
 fi
 
 # ---------------------------------------------------------------------------
