@@ -14,9 +14,12 @@ return {
           -- DiffviewFileHistory is in diffview's cmd list, so pressing the key
           -- before diffview loads still triggers lazy-loading via cmd interception.
           pcall(vim.keymap.del, "n", "<leader>gL")
-          vim.keymap.set("n", "<leader>gL",
+          vim.keymap.set(
+            "n",
+            "<leader>gL",
             "<cmd>.DiffviewFileHistory --follow<cr>",
-            { desc = "History: current line" })
+            { desc = "History: current line" }
+          )
         end)
       end,
     })
@@ -34,5 +37,19 @@ return {
     -- keymaps (<leader>e/E/fe/fE) stayed live. All it actually switched off was
     -- the directory-buffer hijack, which then handed `nvim .` to netrw and cost
     -- a netrw disable plus a UIEnter dashboard reconstruction to paper over.
+    picker = {
+      sources = {
+        -- 1. Fixes the default file finder (<leader><leader>)
+        files = {
+          hidden = true, -- Shows dotfiles
+          ignored = true, -- Shows git-ignored files (e.g. .env files)
+        },
+        -- 2. Fixes the tree explorer sidebar (<leader>e)
+        explorer = {
+          hidden = true, -- Shows dotfiles in the tree sidebar
+          ignored = true, -- Shows git-ignored files in the tree sidebar
+        },
+      },
+    },
   },
 }
