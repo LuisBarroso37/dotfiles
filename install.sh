@@ -144,7 +144,8 @@ unset _cask
 # stow cannot own the directory. Symlink only the config file.
 echo "==> Wiring karabiner config"
 mkdir -p "$HOME/.config/karabiner"
-ln -sfn "$DOTFILES/macos/karabiner/karabiner.json" "$HOME/.config/karabiner/karabiner.json"
+ln -sfn "$DOTFILES/macos/karabiner/karabiner.json" "$HOME/.config/karabiner/karabiner.json" \
+  || { FAILED_PKGS+=" karabiner-config"; echo "!! failed to link karabiner.json" >&2; }
 
 # Rectangle: RectangleConfig.json is Rectangle's own export format, not a standard
 # plist — defaults import does not apply. Import via the URL scheme instead; open
