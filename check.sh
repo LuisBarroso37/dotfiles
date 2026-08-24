@@ -512,18 +512,46 @@ if [ "$(uname -s)" = "Darwin" ]; then
     # been launched since install.sh staged it, or the prompt is still waiting.
     fail "Rectangle config staged but never applied — launch Rectangle and confirm the import prompt"
   else
-    # leftHalf is written to the domain only by an import (or a manual UI edit);
-    # Rectangle's own built-in shortcuts are registered in-memory and never
-    # persisted, so its presence is a clean signal that the import ran. Compare
-    # against the repo rather than a hardcoded number so retuning the config in
-    # git cannot silently rot this check.
-    _rect_want="$(plutil -extract shortcuts.leftHalf.modifierFlags raw -o - "$_rect_cfg" 2>/dev/null || true)"
-    _rect_have="$(defaults export com.knollsoft.Rectangle - 2>/dev/null \
-      | plutil -extract leftHalf.modifierFlags raw -o - - 2>/dev/null || true)"
-    if [ -z "$_rect_have" ]; then
-      fail "Rectangle config not applied — com.knollsoft.Rectangle has no leftHalf shortcut (run ./install.sh)"
-    elif [ "$_rect_have" != "$_rect_want" ]; then
-      fail "Rectangle leftHalf modifiers drifted: repo says $_rect_want, live domain says $_rect_have (re-export to the repo, or run ./install.sh)"
+    # Assert on scalar defaults, NOT on shortcuts.
+    #
+    # The obvious check — "is leftHalf in the domain?" — is wrong, and passes
+    # right up until it doesn't. Rectangle registers its built-in shortcuts
+    # through MASShortcutBinder, which stores them in UserDefaults' *registration*
+    # domain and drops any persisted entry that matches the registered default.
+    # An import writes all 29 shortcuts explicitly, so the check passes; then the
+    # first time the Settings window is opened every shortcut that equals a
+    # built-in alternateDefault (leftHalf, maximize, the arrows, ~21 of them) is
+    # stripped from the persistent domain and the check starts failing with the
+    # config still perfectly applied. Only bindings that differ from a built-in
+    # default survive there, and which ones those are changes between Rectangle
+    # releases — centerTwoThirds gained a default binding in build >94.
+    #
+    # Scalar defaults have no such normalisation: nothing writes them but an
+    # import or a deliberate UI change. launchOnLogin and alternateDefaultShortcuts
+    # are the useful pair — both are BoolDefaults that Rectangle leaves false out
+    # of the box and this repo sets true, so a matching value cannot be a fresh
+    # install that never imported. Read the expected value from the repo rather
+    # than hardcoding it, so re-exporting the config cannot silently rot this.
+    _rect_missing=""
+    _rect_drift=""
+    for _rect_key in launchOnLogin alternateDefaultShortcuts; do
+      _rect_want="$(plutil -extract "defaults.$_rect_key.bool" raw -o - "$_rect_cfg" 2>/dev/null || true)"
+      case "$_rect_want" in
+        true)  _rect_want=1 ;;
+        false) _rect_want=0 ;;
+        *)     continue ;;   # key dropped from the config — nothing to assert
+      esac
+      _rect_have="$(defaults read com.knollsoft.Rectangle "$_rect_key" 2>/dev/null || true)"
+      if [ -z "$_rect_have" ]; then
+        _rect_missing="$_rect_missing $_rect_key"
+      elif [ "$_rect_have" != "$_rect_want" ]; then
+        _rect_drift="$_rect_drift $_rect_key(repo=$_rect_want live=$_rect_have)"
+      fi
+    done
+    if [ -n "$_rect_missing" ]; then
+      fail "Rectangle config not applied — com.knollsoft.Rectangle is missing:$_rect_missing (run ./install.sh)"
+    elif [ -n "$_rect_drift" ]; then
+      fail "Rectangle config drifted from the repo:$_rect_drift (re-export from Rectangle → Settings → General → Export, or run ./install.sh)"
     else
       ok "Rectangle config applied to com.knollsoft.Rectangle"
     fi
