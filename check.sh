@@ -380,7 +380,8 @@ criterion "C3 — stow closure"
 
 if command -v stow >/dev/null 2>&1; then
   mkdir -p "$STOW_TARGET" 2>/dev/null || true
-  for spec in "$STOW_TARGET|." "$HOME|zsh"; do
+  mkdir -p "$HOME/.local/bin" 2>/dev/null || true
+  for spec in "$STOW_TARGET|." "$HOME|zsh" "$HOME/.local/bin|bin"; do
     tgt="${spec%%|*}"; pkg="${spec##*|}"
     out="$(stow --no --restow --target="$tgt" "$pkg" 2>&1)" || true
     conflicts="$(printf '%s\n' "$out" | grep -E 'existing target|cannot stow' || true)"

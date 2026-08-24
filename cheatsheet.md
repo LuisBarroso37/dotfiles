@@ -47,6 +47,32 @@
 
 ---
 
+## GitLab tokens (opread)
+
+> Three GitLab personal access tokens live in 1Password and are fetched **on
+> demand** — never at shell startup, because a cold `op read` wakes the desktop
+> app for a biometric unlock (~6-8s; ~1.2s warm). No token is written to any
+> config file: each consumer reads a reference instead.
+
+| Command | Effect |
+| --- | --- |
+| `opread` | all three (same as `opread all`) |
+| `opread npm` | exports `GITLAB_NPM_REGISTRY_TOKEN`, which `~/.npmrc` interpolates as `${GITLAB_NPM_REGISTRY_TOKEN}` |
+| `opread tf` | exports `TF_TOKEN_gitlab_com`, read natively by Terraform ≥ 1.2 — no `~/.terraformrc` needed |
+| `opread go` | pre-warms git's credential cache for gitlab.com (8h) |
+
+Selectors accept long spellings and commas: `opread terraform,golang`.
+
+**Go needs no token in your environment.** `~/.local/bin/git-credential-op-gitlab`
+is registered in `~/.config/git/config` and calls `op read` when git asks for
+gitlab.com credentials; `go` shares that same helper through
+`GOAUTH="git $HOME"`, set alongside `GOPRIVATE=gitlab.com` with `go env -w` so
+gopls sees it too. A `cache --timeout=28800` helper sits in front, so the
+1Password unlock happens once a day rather than once per fetch. `opread go` just
+does that unlock at a moment you chose.
+
+---
+
 ## Git worktrees (git + tmux + sesh)
 
 > Worktrees are **nested directories** named `<parent>/<repo>/<branch-slug>` (e.g.

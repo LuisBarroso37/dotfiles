@@ -603,6 +603,111 @@ function y() {
 	rm -f -- "$tmp"
 }
 
+# --- 1Password-backed GitLab access tokens ---------------------------------
+# Three GitLab personal access tokens — npm registry, Terraform registry, private
+# Go modules — live in 1Password and are pulled on demand by opread.
+#
+# On demand rather than at startup is the entire point. `op read` measures ~1.2s
+# warm and ~6-8s cold, a cold read being one that wakes the desktop app for a
+# biometric unlock. The unconditional
+#   export GITLAB_NPM_REGISTRY_TOKEN=$(op read …)
+# that used to sit at the very bottom of this file therefore charged that to
+# every new terminal, including the many that never touch npm — and it sat after
+# the .zshrc.local block that the comment below calls the last line of the file.
+#
+# No token is written to a config file anywhere; each consumer reads a reference:
+#   npm        ~/.npmrc already interpolates ${GITLAB_NPM_REGISTRY_TOKEN}
+#   terraform  TF_TOKEN_gitlab_com is read natively (Terraform >= 1.2) and
+#              outranks any credentials block, so ~/.terraformrc is redundant
+#   golang     no env var at all — git-credential-op-gitlab, wired up in
+#              ~/.config/git/config, serves git, and the go command shares it via
+#              GOAUTH="git $HOME" (set with `go env -w`, so gopls sees it too).
+#              netrc could not have worked here: its format holds literals only,
+#              never a reference. `opread go` just pre-warms git's credential
+#              cache; there is nothing for it to export.
+#
+#   opread            # all three
+#   opread npm        # one of npm | tf,terraform | go,golang
+#   opread npm,go     # comma- or space-separated
+opread() {
+  local -a targets
+  local arg tok cred rc=0
+
+  # Secure notes in the Employee vault, so the token is the note body: notesPlain.
+  # The Go token is deliberately missing from this list — git-credential-op-gitlab
+  # owns it, and duplicating the reference here would give it two sources of truth.
+  local npm_item='op://Employee/gitlab-access-token-api_read-package-registry/notesPlain'
+  local tf_item='op://Employee/gitlab-access-token-api_read-terraform/notesPlain'
+
+  # Joining the arguments on ',' and splitting the result back on ',' normalises
+  # `opread npm go` and `opread npm,go` to one list. With no arguments the join
+  # yields an empty string, which zsh splits to nothing, so the loop never runs
+  # and the default below takes over.
+  for arg in ${(s:,:)${(j:,:)@}}; do
+    case "$arg" in
+      npm)          targets+=(npm) ;;
+      tf|terraform) targets+=(tf) ;;
+      go|golang)    targets+=(go) ;;
+      all)          targets=(npm tf go) ;;
+      *) print -u2 "opread: unknown target '$arg' (want npm, tf, go, all)"; return 2 ;;
+    esac
+  done
+  (( $#targets )) || targets=(npm tf go)
+  targets=(${(u)targets})   # `opread npm npm` should cost one 1Password call
+
+  command -v op >/dev/null 2>&1 || {
+    print -u2 "opread: the 1Password CLI (op) is not on PATH."
+    return 1
+  }
+
+  for arg in $targets; do
+    case "$arg" in
+      npm)
+        # Read into a local and test *that* — never `export X=$(op read …)`.
+        # export is a builtin, so the shell sees the builtin's status (always 0)
+        # rather than the substitution's, and a failed read would quietly export
+        # an empty token. Verified: `export FOO=$(false)` exits 0 where the bare
+        # `FOO=$(false)` exits 1. Same trap the `y` function above documents.
+        if tok=$(op read --no-newline "$npm_item") && [[ -n "$tok" ]]; then
+          export GITLAB_NPM_REGISTRY_TOKEN="$tok"
+          print "opread: npm  → GITLAB_NPM_REGISTRY_TOKEN"
+        else
+          print -u2 "opread: npm  ✗ could not read the package-registry token"
+          rc=1
+        fi
+        ;;
+      tf)
+        if tok=$(op read --no-newline "$tf_item") && [[ -n "$tok" ]]; then
+          export TF_TOKEN_gitlab_com="$tok"
+          print "opread: tf   → TF_TOKEN_gitlab_com"
+        else
+          print -u2 "opread: tf   ✗ could not read the Terraform token"
+          rc=1
+        fi
+        ;;
+      go)
+        # Nothing to export: the credential helper is already on demand by
+        # construction. What this buys is taking the 1Password unlock *now*,
+        # interactively, instead of leaving it to the first `go mod download` —
+        # or worse to a background gopls, which would raise a Touch ID prompt
+        # with no visible cause. `fill` runs the helper chain, but only `approve`
+        # seeds the cache daemon; fill on its own does not store what it read.
+        if cred=$(printf 'protocol=https\nhost=gitlab.com\n\n' \
+                    | GIT_TERMINAL_PROMPT=0 git credential fill 2>/dev/null) \
+           && [[ "$cred" == *password=* ]]; then
+          printf '%s\n\n' "$cred" | git credential approve
+          print "opread: go   → gitlab.com cached for git and go (8h)"
+        else
+          print -u2 "opread: go   ✗ no password returned for gitlab.com"
+          rc=1
+        fi
+        ;;
+    esac
+  done
+
+  return $rc
+}
+
 # Machine/work-specific settings (Angular CLI completion, Docker host, STM32,
 # and any toolchains not yet under mise like Go/Rust) live in an untracked
 # ~/.zshrc.local, so this tracked config stays portable and a fresh machine

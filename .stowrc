@@ -15,3 +15,4 @@
 --ignore=terminfo
 --ignore=herdr
 --ignore=macos
+--ignore=bin

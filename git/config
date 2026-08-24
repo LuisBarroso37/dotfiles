@@ -16,6 +16,24 @@
 	dark = true
 	hyperlinks = true            # clickable file:line links in supporting terminals
 
+# gitlab.com is authenticated with a personal access token kept in 1Password and
+# never written to disk. `helper = op-gitlab` resolves to the executable
+# git-credential-op-gitlab on PATH (~/.local/bin), which shells out to `op read`,
+# so this tracked file holds a reference and stays safe to commit. It replaces
+# ~/.netrc, whose format is literal-only and so could not hold a reference.
+#
+# The cache helper is listed FIRST and is load-bearing rather than an
+# optimisation: a warm `op read` measures ~1.2s here (~8s cold, when it wakes the
+# desktop app for a biometric unlock), and without a cache in front every fetch,
+# push and Go module lookup would pay that. `cache` is an in-memory daemon, so
+# the token still never touches disk; 8h ≈ a working day, so one unlock covers it.
+#
+# Both helpers sit in the gitlab.com subsection rather than a bare [credential]
+# section, so github.com and every other host behave exactly as before.
+[credential "https://gitlab.com"]
+	helper = "cache --timeout=28800"
+	helper = op-gitlab
+
 [merge]
 	conflictstyle = zdiff3       # clearer 3-way conflict markers
 

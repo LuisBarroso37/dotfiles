@@ -183,6 +183,15 @@ run_shared_tail() {
   mkdir -p "$HOME/.config"      # stow aborts if --target from .stowrc doesn't exist
   stow_with_backup "$HOME/.config" . || rc=1   # nvim, tmux, sesh, ghostty, starship, atuin, git, lazygit, yazi
   stow_with_backup "$HOME" zsh || rc=1         # zsh dotfiles live in ~, not ~/.config
+  # bin/ holds executables meant to be on PATH, not config, so it gets its own
+  # target (~/.local/bin, prepended to PATH by the first line of zsh/.zshrc) and
+  # is stowignored out of the '.' package above. Currently just the git
+  # credential helper git/config names for gitlab.com — which is why this is not
+  # optional: without it a fresh machine has the credential.helper line pointing
+  # at an executable that does not exist, and every gitlab.com fetch falls back
+  # to prompting.
+  mkdir -p "$HOME/.local/bin"   # same reason as ~/.config above
+  stow_with_backup "$HOME/.local/bin" bin || rc=1
 
   ## herdr is stowignored: it writes runtime state (logs, sockets, session.json)
   ## into ~/.config/herdr, so that directory has to stay a real directory rather
