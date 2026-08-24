@@ -171,15 +171,70 @@ ln -sfn "$DOTFILES/macos/karabiner" "$HOME/.config/karabiner" \
   || { FAILED_PKGS+=" karabiner-config"; echo "!! failed to link karabiner config dir" >&2; }
 
 # Rectangle: RectangleConfig.json is Rectangle's own export format, not a standard
-# plist — defaults import does not apply. Import via the URL scheme instead; open
-# launches Rectangle in the background (-g) if it is not already running.
+# plist — `defaults import` does not apply.
+#
+# This used to run `open -g "rectangle://import?url=..."`. That URL does nothing.
+# Rectangle's scheme handler only understands the hosts `execute-action` and
+# `execute-task` (ignore-app/unignore-app) and drops everything else on its
+# `default:` branch — there has never been an `import` host. The failure was
+# invisible from both sides: `open` exits 0 because a handler *is* registered for
+# rectangle://, and the call still launched the app, so an install looked like it
+# had worked while Rectangle sat on stock defaults. Caught by diffing
+# `defaults read com.knollsoft.Rectangle` against this repo's config — none of the
+# tracked keys were in the domain.
+#
+# The supported non-GUI path is the Application Support drop: Rectangle calls
+# Defaults.loadFromSupportDir() as the first line of applicationDidFinishLaunching
+# and imports ~/Library/Application Support/Rectangle/RectangleConfig.json if one
+# is there. Three constraints fall out of that code path:
+#   - it must be a real file. Rectangle treats a symlink (or a world-writable
+#     file) as tampering: it refuses the import, deletes the file and alerts. So
+#     cp, not ln -s, plus an explicit chmod 644 in case of a loose umask. This is
+#     the one config in the repo that deliberately does NOT get symlinked.
+#   - it is read at launch only. The --adopt cask install above may well have left
+#     Rectangle running, and that instance would never look at the file — quit it
+#     first and wait for the process to actually go away before relaunching.
+#   - it prompts "Apply Rectangle configuration?" first, and Rectangle's NSAlert
+#     does not call NSApp.activate. Under `open -g` that modal would block launch
+#     from the background with nothing on screen to explain the hang, so launch in
+#     the foreground and say up front that a prompt is coming.
+# On apply Rectangle renames the file to RectangleConfig<timestamp>.json, so the
+# drop is self-consuming: a re-run copies it again and re-prompts. A file still
+# sitting there afterwards means the import never happened — check.sh asserts on
+# exactly that.
 echo "==> Importing Rectangle config"
-# || true: `open` exits non-zero when no app is registered for the rectangle://
-# scheme (i.e. the cask above failed). Under `set -e` an unguarded failure here
-# aborts the script before finish_install runs — nothing stowed, no verification,
-# no error banner. A failed cask is already captured in FAILED_PKGS from the loop
-# above; this import is best-effort and needs no separate accounting.
-open -g "rectangle://import?url=file://$DOTFILES/macos/rectangle/RectangleConfig.json" || true
+# Gate on the cask's own accounting rather than probing /Applications: if the cask
+# failed, FAILED_PKGS already carries it and verify_install will report it, so
+# this step just steps aside instead of adding a second error for one root cause.
+case " ${FAILED_PKGS-} " in
+  *" rectangle "*)
+    echo "   ↳ rectangle cask unavailable — skipping config import." >&2
+    ;;
+  *)
+    _rect_support="$HOME/Library/Application Support/Rectangle"
+    # Only quit if it is actually up: `quit app` on a non-running app makes
+    # AppleScript launch it just to close it again.
+    if pgrep -xq Rectangle; then
+      osascript -e 'quit app "Rectangle"' >/dev/null 2>&1 || killall Rectangle 2>/dev/null || true
+      # Bounded — never wedge the install on an app that will not die. If it is
+      # still up after this, the relaunch below is a no-op and the leftover file
+      # is picked up by the next launch (or flagged by check.sh).
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        pgrep -xq Rectangle || break
+        sleep 0.5
+      done
+    fi
+    mkdir -p "$_rect_support"
+    # || true on each step: under `set -e` an unguarded failure here aborts before
+    # finish_install runs — nothing stowed, no verification, no error banner.
+    cp -f "$DOTFILES/macos/rectangle/RectangleConfig.json" "$_rect_support/RectangleConfig.json" \
+      && chmod 644 "$_rect_support/RectangleConfig.json" \
+      && echo "   ↳ confirm the \"Apply Rectangle configuration?\" prompt when Rectangle opens" \
+      && { open -a Rectangle || true; } \
+      || { FAILED_PKGS+=" rectangle-config"; echo "!! failed to stage Rectangle config" >&2; }
+    unset _rect_support
+    ;;
+esac
 
 # Optional per-machine install steps (extra packages, yazi's preview deps, etc.)
 # live in an untracked install.local.sh next to this script — sourced here if it

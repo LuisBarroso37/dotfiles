@@ -489,6 +489,46 @@ if [ "$(uname -s)" = "Darwin" ]; then
   fi
 fi
 
+# On macOS only: verify the Rectangle config actually landed in Rectangle's
+# preference domain. This had no coverage at all, which is how a dead import
+# survived: install.sh was calling a rectangle:// URL that Rectangle's scheme
+# handler does not implement, `open` exited 0 anyway, and nothing downstream ever
+# looked at the result. Same failure shape as the font cask that "installed"
+# without producing a binary — a no-op that reports success needs an assertion on
+# the effect, not on the command.
+#
+# Rectangle is imported by copy, not symlinked (it refuses symlinked configs), so
+# unlike karabiner there is no link to assert on and edits made in Rectangle's UI
+# do NOT flow back to the repo. The durable invariant is the domain itself.
+if [ "$(uname -s)" = "Darwin" ]; then
+  _rect_cfg="$DOTFILES/macos/rectangle/RectangleConfig.json"
+  _rect_pending="$HOME/Library/Application Support/Rectangle/RectangleConfig.json"
+  if [ ! -f "$_rect_cfg" ]; then
+    fail "$_rect_cfg missing"
+  elif [ -f "$_rect_pending" ]; then
+    # Rectangle renames this file away the moment it applies it, so one still
+    # sitting here means the import is queued but unconfirmed — Rectangle has not
+    # been launched since install.sh staged it, or the prompt is still waiting.
+    fail "Rectangle config staged but never applied — launch Rectangle and confirm the import prompt"
+  else
+    # leftHalf is written to the domain only by an import (or a manual UI edit);
+    # Rectangle's own built-in shortcuts are registered in-memory and never
+    # persisted, so its presence is a clean signal that the import ran. Compare
+    # against the repo rather than a hardcoded number so retuning the config in
+    # git cannot silently rot this check.
+    _rect_want="$(plutil -extract shortcuts.leftHalf.modifierFlags raw -o - "$_rect_cfg" 2>/dev/null || true)"
+    _rect_have="$(defaults export com.knollsoft.Rectangle - 2>/dev/null \
+      | plutil -extract leftHalf.modifierFlags raw -o - - 2>/dev/null || true)"
+    if [ -z "$_rect_have" ]; then
+      fail "Rectangle config not applied — com.knollsoft.Rectangle has no leftHalf shortcut (run ./install.sh)"
+    elif [ "$_rect_have" != "$_rect_want" ]; then
+      fail "Rectangle leftHalf modifiers drifted: repo says $_rect_want, live domain says $_rect_have (re-export to the repo, or run ./install.sh)"
+    else
+      ok "Rectangle config applied to com.knollsoft.Rectangle"
+    fi
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # C5 — Doc closure
 # ---------------------------------------------------------------------------

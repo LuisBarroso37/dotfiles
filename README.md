@@ -198,9 +198,19 @@ stow .                     # all ~/.config packages
 stow --target="$HOME" zsh  # zsh dotfiles → ~
 ```
 
-**Two more packages are excluded from `stow .`**, because a symlink is the wrong
+**Three more packages are excluded from `stow .`**, because a symlink is the wrong
 shape for them:
 
+- `macos/` — neither of these targets `~/.config`, so `install.sh` wires both by
+  hand. `macos/karabiner/` is linked as a whole **directory** (Karabiner saves via
+  `rename(2)`, which would replace a file-level symlink with a regular file and
+  silently orphan the repo copy). `macos/rectangle/RectangleConfig.json` is
+  **copied**, not linked — Rectangle refuses a symlinked config as tampering, so
+  `install.sh` drops a copy in `~/Library/Application Support/Rectangle/` and
+  Rectangle imports it on next launch, behind a confirmation prompt. Consequence
+  worth knowing: this is the one config where edits made in the app's UI do *not*
+  flow back to the repo. Re-export from Rectangle's settings over the tracked file
+  when you change a shortcut; `check.sh` fails if the live domain has drifted.
 - `herdr/` — herdr writes runtime state (logs, sockets, `session.json`) into
   `~/.config/herdr`, so that has to stay a real directory. `install.common.sh`
   links only `config.toml` into it by hand. Left to stow, the whole restow aborts with
