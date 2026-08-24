@@ -461,20 +461,31 @@ else
   fail "install.common.sh missing"
 fi
 
-# On macOS only: verify the karabiner config symlink. It is not stowed —
-# Karabiner writes runtime state (backups, assets, logs) into ~/.config/karabiner/
-# so stow cannot fold that directory, and install.sh links only karabiner.json by hand.
-# Neither stow_deploys nor verify_install catches this file. Guarded on Darwin so
-# Linux C4 runs are unaffected (Linux machines never have this path).
+# On macOS only: verify the karabiner config symlink. It is not stowed — stow
+# cannot own a directory Karabiner writes runtime state into — so install.sh
+# links ~/.config/karabiner by hand and neither stow_deploys nor verify_install
+# covers it. Guarded on Darwin so Linux C4 runs are unaffected (Linux machines
+# never have this path).
+#
+# Assert on the DIRECTORY, not karabiner.json. Karabiner saves via rename(2),
+# which replaces a file-level symlink with a regular file; the old check tested
+# the one thing Karabiner was guaranteed to destroy, and it passed at install
+# time right before the first UI write orphaned the repo copy. -L on the
+# directory is the durable invariant — a rename inside it cannot clear this.
 if [ "$(uname -s)" = "Darwin" ]; then
-  if [ -L "$HOME/.config/karabiner/karabiner.json" ]; then
-    _kara_real="$(readlink -f "$HOME/.config/karabiner/karabiner.json" 2>/dev/null)"
+  if [ -L "$HOME/.config/karabiner" ]; then
+    _kara_real="$(readlink -f "$HOME/.config/karabiner" 2>/dev/null)"
     case "$_kara_real" in
-      "$DOTFILES"/*) ok "$HOME/.config/karabiner/karabiner.json → repo" ;;
-      *) fail "$HOME/.config/karabiner/karabiner.json resolves outside the repo ($_kara_real)" ;;
+      "$DOTFILES"/*) ok "$HOME/.config/karabiner → repo" ;;
+      *) fail "$HOME/.config/karabiner resolves outside the repo ($_kara_real)" ;;
     esac
+    # The link can be right while the file it should expose is missing.
+    [ -f "$HOME/.config/karabiner/karabiner.json" ] \
+      || fail "$HOME/.config/karabiner/karabiner.json missing"
+  elif [ -d "$HOME/.config/karabiner" ]; then
+    fail "$HOME/.config/karabiner is a real directory, not a symlink — Karabiner edits are not reaching the repo (run ./install.sh)"
   else
-    fail "$HOME/.config/karabiner/karabiner.json missing or not a symlink (run ./install.sh)"
+    fail "$HOME/.config/karabiner missing (run ./install.sh)"
   fi
 fi
 

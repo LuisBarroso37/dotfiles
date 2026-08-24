@@ -44,3 +44,15 @@ herdr/.plugins.lock
 # licenses stay tracked. Run `ya pkg upgrade` to refresh a flavor.
 yazi/flavors/*/preview.png
 yazi/flavors/*/README.md
+
+# Karabiner runtime state. Same shape as the atuin note above: install.sh points
+# ~/.config/karabiner at macos/karabiner/ as a *directory* symlink (a file-level
+# link on karabiner.json does not survive Karabiner's rename(2) save), so
+# everything Karabiner writes into its config dir now lands inside the repo.
+# Only karabiner.json is worth tracking. automatic_backups/ in particular is a
+# dated copy of the config on every save — left untracked it would otherwise
+# accumulate a new ~60KB blob in git each time a setting changes.
+macos/karabiner/automatic_backups/
+macos/karabiner/assets/
+macos/karabiner/log/
+macos/karabiner/*.tmp

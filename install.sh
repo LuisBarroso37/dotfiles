@@ -139,13 +139,36 @@ for _cask in ghostty font-jetbrains-mono-nerd-font karabiner-elements rectangle;
 done
 unset _cask
 
-# Karabiner-Elements: ~/.config/karabiner/ must stay a real directory — Karabiner
-# writes runtime state (automatic_backups/, assets/, log/) into it at startup, so
-# stow cannot own the directory. Symlink only the config file.
+# Karabiner-Elements: symlink the whole ~/.config/karabiner DIRECTORY, not the
+# karabiner.json inside it.
+#
+# This used to link the file, on the theory that the directory had to stay real
+# because Karabiner writes runtime state (automatic_backups/, assets/, log/)
+# into it. That link does not survive: Karabiner saves by writing a temp file
+# and rename(2)-ing it over karabiner.json, which replaces the symlink with a
+# fresh regular file. install.sh left a correct link, then the first change made
+# in the Karabiner UI silently orphaned the repo copy — edits stopped reaching
+# git and check.sh's "→ repo" assertion had already passed on the way out.
+#
+# A directory symlink is outside that blast radius: rename(2) resolves the
+# directory component of the destination, so the new inode lands inside the repo
+# and the link itself is never touched. Confirmed by triggering a real Karabiner
+# write against both layouts. The runtime state now lives in the repo, where
+# .gitignore excludes it.
 echo "==> Wiring karabiner config"
-mkdir -p "$HOME/.config/karabiner"
-ln -sfn "$DOTFILES/macos/karabiner/karabiner.json" "$HOME/.config/karabiner/karabiner.json" \
-  || { FAILED_PKGS+=" karabiner-config"; echo "!! failed to link karabiner.json" >&2; }
+mkdir -p "$DOTFILES/macos/karabiner"
+# A pre-existing real directory holds this machine's own config and runtime
+# state — move it aside rather than rm -rf it, so a bad guess here is recoverable.
+if [ -d "$HOME/.config/karabiner" ] && [ ! -L "$HOME/.config/karabiner" ]; then
+  mkdir -p "$BACKUP"
+  mv "$HOME/.config/karabiner" "$BACKUP/karabiner" \
+    && echo "   ↳ backed up $HOME/.config/karabiner → $BACKUP/karabiner"
+fi
+mkdir -p "$HOME/.config"
+# -n so a re-run replaces the existing link instead of dropping a nested
+# "karabiner" link inside the directory it already points at.
+ln -sfn "$DOTFILES/macos/karabiner" "$HOME/.config/karabiner" \
+  || { FAILED_PKGS+=" karabiner-config"; echo "!! failed to link karabiner config dir" >&2; }
 
 # Rectangle: RectangleConfig.json is Rectangle's own export format, not a standard
 # plist — defaults import does not apply. Import via the URL scheme instead; open
