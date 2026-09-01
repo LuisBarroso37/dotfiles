@@ -26,8 +26,9 @@ require("lazy").setup({
     -- the (unenabled) lazyvim.plugins.extras.editor.neo-tree extra.
     -- disable LazyVim's default colorscheme
     { "folke/tokyonight.nvim", enabled = false },
-    -- catppuccin colorscheme
-    { "catppuccin/nvim", name = "catppuccin", priority = 1000, opts = { flavour = "mocha" } },
+    -- No catppuccin spec is needed: LazyVim's colorscheme.lua already ships
+    -- { "catppuccin/nvim", lazy = true, name = "catppuccin", opts = { integrations… } },
+    -- and `colorscheme = "catppuccin-mocha"` above picks the flavour.
     -- import/override with your plugins
     { import = "plugins" },
   },

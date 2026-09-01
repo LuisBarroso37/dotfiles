@@ -12,9 +12,18 @@ vim.keymap.set("n", "N", "Nzzzv")
 
 -- Registers: paste/delete without clobbering the yank register
 -- Paste over a visual selection while keeping what you originally yanked
-vim.keymap.set("x", "<leader>p", [["_dP]])
+vim.keymap.set("x", "<leader>p", [["_dP]], { desc = "Paste over selection (keep yank)" })
 -- Delete to the black hole register (delete without saving to a register)
-vim.keymap.set({ "n", "v" }, "<leader>d", [["_d]])
+-- Deliberately shadows LazyVim's `debug` which-key group: nothing here uses DAP, and
+-- the only maps under it are the profiler's <leader>dpp / <leader>dph, which still
+-- work if typed inside `timeoutlen` (300ms).
+vim.keymap.set({ "n", "v" }, "<leader>d", [["_d]], { desc = "Delete to black hole register" })
+
+-- <leader>gL: LazyVim's config/keymaps.lua sets this to Snacks git_log (cwd) with a
+-- raw vim.keymap.set. lazyvim.config.keymaps is loaded before config.keymaps, so
+-- re-setting it here simply wins. DiffviewFileHistory is in diffview's `cmd` list,
+-- so the command stub still lazy-loads the plugin on first press.
+vim.keymap.set("n", "<leader>gL", "<cmd>.DiffviewFileHistory --follow<cr>", { desc = "History: current line" })
 
 -- Yank relative path to system clipboard
 vim.keymap.set("n", "<leader>yp", function()

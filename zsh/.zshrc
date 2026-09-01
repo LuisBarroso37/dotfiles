@@ -1,5 +1,6 @@
-# PATH
-export PATH="$HOME/.local/bin:$PATH"
+# PATH lives in .zprofile — .zshrc is interactive-only, and a plain
+# `zsh script.sh` needs those entries too. mise is still activated from here
+# (below), which keeps its shims ahead of everything .zprofile exports.
 
 # Undercurl inside herdr. herdr spawns every pane with TERM=xterm-256color, whose
 # terminfo has no Smulx/Setulc — so neovim downgrades LSP diagnostics from a red
@@ -15,13 +16,28 @@ fi
 # Carapace completions
 # Rebuild .zcompdump at most once per day; use the cached dump otherwise.
 # Without the freshness check, compinit scans all $fpath on every shell start
-# — measurable overhead with carapace, mise, atuin, fzf, sesh, zoxide all
-# contributing completions. The (N.mh+24) glob qualifier matches the dump
-# only when it is older than 24 hours; requires EXTENDED_GLOB (set by compinit
-# itself via -U, but the glob runs before that, so we enable it inline).
+# — measured with zprof at 113ms / 820 compdef calls, vs 16ms for `compinit -C`,
+# with carapace, mise, atuin, fzf, sesh and zoxide all contributing completions.
+#
+# The (#qN.mh+24) glob qualifier matches the dump only when it is older than 24
+# hours. It needs EXTENDED_GLOB, which must be set *here*: `autoload -Uz` does
+# not set it (-U only suppresses alias expansion in the function body) and
+# compinit setting it internally is far too late — the glob is expanded before
+# compinit is ever called. Without it the qualifier is never interpreted, the
+# word is non-empty regardless, and the `compinit -C` fast path was dead code.
+#
+# The anonymous function + `localoptions` confines EXTENDED_GLOB to the test, so
+# the interactive shell keeps stock globbing (`#`, `^`, `~` stay literal) — this
+# fixes the freshness check without silently changing how every pattern you type
+# is parsed.
 autoload -Uz compinit
-if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
-  compinit
+if () { setopt localoptions extended_glob
+        [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]] }; then
+  # -i: skip insecure $fpath directories silently instead of stopping every new
+  # terminal on an interactive "[Ignore, Prune, Abort]?" prompt. compaudit is
+  # clean today, but the full compinit still runs daily, and one brew upgrade
+  # that leaves site-functions group-writable would otherwise block every shell.
+  compinit -i
 else
   compinit -C
 fi
@@ -60,6 +76,10 @@ if command -v fd &>/dev/null; then
   export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
   export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
 fi
+# Note: this also binds Ctrl-R to fzf-history-widget, but `atuin init zsh` below
+# rebinds Ctrl-R to atuin — atuin owns history search here. fzf's widget stays
+# defined but unreachable, and FZF_CTRL_R_OPTS therefore does nothing. Ctrl-T and
+# Alt-C (the bindings we actually want from this) are unaffected.
 command -v fzf &>/dev/null && source <(fzf --zsh)
 
 # Starship prompt
@@ -92,11 +112,9 @@ command -v atuin &>/dev/null && eval "$(atuin init zsh)"
 # machine without mise is a no-op.
 command -v mise &>/dev/null && eval "$(mise activate zsh)"
 
-# Language-tool bin dirs (portable, guarded no-ops when absent). The toolchains
-# come from mise (go) and rustup (rust); these just expose the CLIs those tools
-# install: `go install` → ~/go/bin, `cargo install` → ~/.cargo/bin.
-[ -d "$HOME/go/bin" ] && export PATH="$HOME/go/bin:$PATH"
-[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+# (The ~/go/bin and ~/.cargo/env PATH entries used to sit here. They moved to
+# .zprofile so non-interactive shells get them too — and because prepending
+# ~/go/bin *after* `mise activate` shadowed mise's own go shim.)
 
 # --- Git worktrees + tmux / herdr ------------------------------------------
 # Worktrees are subdirs named <parent>/<repo>/<branch-slug>; each gets a tmux
@@ -105,11 +123,30 @@ command -v mise &>/dev/null && eval "$(mise activate zsh)"
 # sesh (Ctrl+b T, tmux's stock prefix) browses tmux sessions; herdr (wth/wthr,
 # under its own Ctrl+a prefix) manages the herdr workspaces.
 
-# Resolve the repo's default branch from origin/HEAD, falling back to whichever
-# of main/master exists on the remote. Repos that default to develop/trunk are
-# then protected by the same guards as main-based ones.
+# Resolve the repo's default branch. Prints NOTHING when it genuinely cannot be
+# determined — callers must treat empty as "unknown" and take the conservative
+# path. This used to end in `${def:-main}`, i.e. it asserted "main" for any repo
+# without origin/HEAD and without origin/main|master; _wt_drop_branch then
+# compared merge-base against a ref that does not exist, which is how a pushed
+# WIP branch in a trunk-based repo got deleted (see the guard there).
+#
+# Every step below is a local ref lookup. Deliberately no `git remote show origin`
+# / `git ls-remote`: this runs on every wtr/wthr/wtrebase invocation and those hit
+# the network. If origin/HEAD is missing, the one-off local fix is
+# `git remote set-head origin --auto`.
+#
+# Order:
+#   1. origin/HEAD          — authoritative; set by `git clone`.
+#   2. origin/main|master   — the overwhelmingly common case when 1 is missing.
+#   3. the MAIN worktree's checked-out branch, but only if it also exists on
+#      origin (or there is no origin at all). This is what catches develop/trunk
+#      repos. It is a heuristic: if the main checkout is itself parked on a
+#      pushed feature branch we will name that branch as the default, which
+#      makes the guards over-protective (refuses a removal) rather than
+#      destructive — the safe direction to be wrong in.
+#   4. local main|master heads, for a repo with no remote.
 _wt_default_branch() {
-  local def b
+  local def b main
   def="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"
   def="${def#origin/}"
   if [[ -z "$def" ]]; then
@@ -117,7 +154,24 @@ _wt_default_branch() {
       git show-ref -q --verify "refs/remotes/origin/$b" && { def="$b"; break; }
     done
   fi
-  print -r -- "${def:-main}"
+  if [[ -z "$def" ]]; then
+    main="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+    main="${main%/.git}"
+    if [[ -n "$main" ]]; then
+      b="$(git -C "$main" branch --show-current 2>/dev/null)"
+      if [[ -n "$b" ]] \
+         && { git show-ref -q --verify "refs/remotes/origin/$b" \
+              || ! git remote get-url origin &>/dev/null; }; then
+        def="$b"
+      fi
+    fi
+  fi
+  if [[ -z "$def" ]]; then
+    for b in main master; do
+      git show-ref -q --verify "refs/heads/$b" && { def="$b"; break; }
+    done
+  fi
+  print -r -- "$def"
 }
 
 # Shared guard for wtr/wthr: never tear down the worktree holding the branch the
@@ -201,7 +255,15 @@ _wt_drop_branch() {
   fi
 
   # Tier 1: direct ancestry (fast-forward or merge commit).
-  if [[ -z "$ref" ]] || git merge-base --is-ancestor "$1" "$ref" 2>/dev/null; then
+  #
+  # `-n "$ref" &&`, not `-z "$ref" ||`. The old form short-circuited an UNKNOWN
+  # reference straight into `git branch -d` — the precise outcome the tiering
+  # above exists to prevent. Reproduced in a repo whose real default is `trunk`:
+  # _wt_default_branch guessed "main", neither origin/main nor main existed, ref
+  # came out empty, and an unmerged, pushed branch was deleted and reported as
+  # "✓ deleted branch". No reference must mean "no proof of merge", which is
+  # tier 3.
+  if [[ -n "$ref" ]] && git merge-base --is-ancestor "$1" "$ref" 2>/dev/null; then
     if out="$(git branch -d "$1" 2>&1)"; then
       print -r -- "✓ deleted branch '$1'"
     else
@@ -224,7 +286,12 @@ _wt_drop_branch() {
   fi
 
   # Tier 3: no proof of merge — leave it alone.
-  print -r -- "• kept branch '$1' (not merged into $ref — run 'gh poi' once its PR lands)"
+  if [[ -n "$ref" ]]; then
+    print -r -- "• kept branch '$1' (not merged into $ref — run 'gh poi' once its PR lands)"
+  else
+    print -r -- "• kept branch '$1' (could not determine this repo's default branch"
+    print -r -- "  — fix with 'git remote set-head origin --auto', then 'git branch -d $1')"
+  fi
 }
 
 # Keep nested worktrees out of the main checkout's `git status`.
@@ -341,12 +408,28 @@ wtc() {
   # `git worktree add`, by herdr, or under the pre-2026-08 layout made wtc die with
   # "could not create worktree" on a worktree wtr resolves fine; and a leftover
   # plain directory at $dir (a worktree rm -rf'd without `git worktree prune`) made
-  # the -d test true, so wtc skipped creation and opened a session in a directory
-  # git has no worktree for.
+  # a `[[ ! -d "$dir" ]]` guard false, so wtc skipped creation entirely and opened
+  # a tmux session in a directory git has no worktree for.
+  #
+  # That guard is gone rather than repaired: `-d` cannot distinguish "a live
+  # worktree is here" from "a corpse is here", and only git knows. So the single
+  # source of truth is _wt_dir_for_branch, and when it finds nothing we always
+  # attempt the add. `git worktree add` refuses a non-empty existing directory and
+  # accepts an empty one, which is exactly the wanted behaviour, and its error is
+  # printed instead of being second-guessed.
+  #
+  # `git worktree prune` runs FIRST, before the lookup, because the rm -rf case
+  # has two halves. The directory is gone, but the administrative record in
+  # .git/worktrees is not: `git worktree list` keeps reporting the worktree, so
+  # _wt_dir_for_branch hands back a path that no longer exists and wtc opens a
+  # tmux session in it. Pruning only drops records whose directory is already
+  # gone — it never touches a live checkout — so it is safe to run every time,
+  # and it is a local operation with no network cost.
+  git worktree prune
   local existing; existing="$(_wt_dir_for_branch "$branch")"
   if [[ -n "$existing" ]]; then
     dir="$existing"
-  elif [[ ! -d "$dir" ]]; then
+  else
     # Order matters. `git worktree add -b <branch> <dir>` ALWAYS succeeds by
     # branching from the current HEAD, so trying it first made the tracking form
     # below unreachable: `wtc someone-elses-branch` silently gave you a fresh empty
@@ -381,21 +464,50 @@ wtr() {
   while [[ "$1" == -* ]]; do flags+=("$1"); shift; done
   local branch="${1:-$(git branch --show-current 2>/dev/null)}"
   [[ $# -gt 0 ]] && shift
+  # Whatever is left has to be a flag. `wtr branch junk1 junk2` used to append the
+  # junk to `git worktree remove`'s argv as extra paths, silently.
+  local arg
+  for arg in "$@"; do
+    [[ "$arg" == -* ]] && continue
+    echo "wtr: too many arguments (unexpected '$arg')" >&2
+    echo "usage: wtr [branch-name] [--force]   (branch defaults to current)" >&2
+    return 1
+  done
   flags+=("$@")
   if [[ -z "$branch" ]]; then
     echo "usage: wtr [branch-name] [--force]   (branch defaults to current)" >&2
     return 1
   fi
-  _wt_refuse_default "$branch" wtr || return 1
+  # Repo check BEFORE the default-branch guard: outside a repo _wt_default_branch
+  # has nothing to go on, and `wtr main` there used to answer "refusing to remove
+  # the default branch's worktree" instead of "not inside a git repository".
   local wt_main wt_repo wt_parent wt_sani wt_dir wt_session
   _wt_paths "$branch" \
     || { echo "wtr: not inside a git repository" >&2; return 1; }
-  local session="$wt_session"
+  _wt_refuse_default "$branch" wtr || return 1
   local dir; dir="$(_wt_dir_for_branch "$branch")"
   if [[ -z "$dir" ]]; then
     echo "wtr: no worktree is checked out on '$branch'." >&2
     return 1
   fi
+  # The session name has to follow the worktree's REAL path, not the
+  # <repo>/<slug> convention $wt_session encodes. For any worktree that isn't at
+  # the conventional path — herdr's own layout, a raw `git worktree add`, the
+  # pre-2026-08 scheme, i.e. exactly the cases _wt_dir_for_branch exists to
+  # handle — the two disagree, so `kill-session -t "=$wt_session"` targeted a
+  # session that does not exist, failed silently behind its 2>/dev/null, and left
+  # an orphan session pointing at the directory we had just deleted.
+  # So: ask tmux which session actually sits at that path, and fall back to
+  # deriving <repo>/<slug> from the real path (not from $wt_session) when tmux
+  # isn't running or has nothing there.
+  # Both sides go through :A before comparison — tmux reports the path it was
+  # given (/tmp/…), git reports the resolved one (/private/tmp/…), and a raw
+  # string compare silently never matches on macOS.
+  local session spath sname
+  while IFS=$'\t' read -r spath sname; do
+    [[ -n "$spath" && "${spath:A}" == "${dir:A}" ]] && { session="$sname"; break }
+  done < <(tmux list-sessions -F "#{session_path}"$'\t'"#{session_name}" 2>/dev/null)
+  [[ -n "$session" ]] || session="${dir:h:t}/${dir:t}"
   _wt_refuse_self "$dir" "$session" wtr || return 1
   git worktree remove "${flags[@]}" "$dir" || return 1
   _wt_sync_excludes
@@ -487,7 +599,20 @@ wth() {
       # rather than branching from main. herdr's --base flag does not reliably set
       # the git branch base; doing it ourselves first means `git worktree add`
       # (which herdr runs internally) simply checks out the already-positioned branch.
-      [[ -n "$current_branch" ]] && git branch "$branch" "$current_branch" 2>/dev/null
+      #
+      # ONLY when the branch exists nowhere. Unconditionally, this was wtc's old
+      # bug with the tiers reversed: `wth someone-elses-branch` created a fresh
+      # local branch at YOUR head instead of tracking origin/<branch>, so their
+      # commits were simply absent and no upstream was configured — while
+      # cheatsheet.md presents wth as wtc's herdr twin, and wtc goes to real
+      # trouble (the DWIM-first ordering above) to avoid precisely this. With the
+      # branch left alone, herdr's internal `git worktree add <dir> <branch>`
+      # resolves the local head or DWIM-tracks the remote one, as it should.
+      if [[ -n "$current_branch" ]] \
+         && ! git show-ref -q --verify "refs/heads/$branch" \
+         && ! git show-ref -q --verify "refs/remotes/origin/$branch"; then
+        git branch "$branch" "$current_branch" 2>/dev/null
+      fi
       local -a create_args=(--branch "$branch" --path "$dir" --label "$label")
       out=$(herdr worktree create "${create_args[@]}" 2>&1)
     fi
@@ -522,14 +647,16 @@ wthr() {
     echo "usage: wthr [branch-name] [--force]   (branch defaults to current)" >&2
     return 1
   fi
-  _wt_refuse_default "$branch" wthr || return 1
   command -v jq &>/dev/null \
     || { echo "wthr: jq is required (brew install jq)" >&2; return 1; }
   command -v herdr &>/dev/null \
     || { echo "wthr: herdr is required — see herdr.dev" >&2; return 1; }
+  # Repo check before the default-branch guard, same reason as in wtr: outside a
+  # repo the guard's answer is meaningless and its message misleading.
   local wt_main wt_repo wt_parent wt_sani wt_dir wt_session
   _wt_paths "$branch" \
     || { echo "wthr: not inside a git repository" >&2; return 1; }
+  _wt_refuse_default "$branch" wthr || return 1
   # Prefer the path git actually has on record; fall back to the convention so a
   # workspace whose checkout was already removed can still be matched and closed.
   local dir; dir="$(_wt_dir_for_branch "$branch")"
@@ -558,6 +685,14 @@ wtrebase() {
   local cur; cur="$(git branch --show-current 2>/dev/null)"
   if [[ -z "$cur" ]]; then
     echo "wtrebase: detached HEAD or not a git repository" >&2
+    return 1
+  fi
+  # _wt_default_branch now returns empty rather than asserting "main" when it
+  # cannot tell. Bail with something actionable instead of rebasing onto the
+  # literal ref "origin/".
+  if [[ -z "$def" ]]; then
+    echo "wtrebase: could not determine this repo's default branch." >&2
+    echo "          Fix it once with: git remote set-head origin --auto" >&2
     return 1
   fi
   echo "Fetching origin…"
@@ -601,111 +736,6 @@ function y() {
 		builtin cd -- "$cwd"
 	fi
 	rm -f -- "$tmp"
-}
-
-# --- 1Password-backed GitLab access tokens ---------------------------------
-# Three GitLab personal access tokens — npm registry, Terraform registry, private
-# Go modules — live in 1Password and are pulled on demand by opread.
-#
-# On demand rather than at startup is the entire point. `op read` measures ~1.2s
-# warm and ~6-8s cold, a cold read being one that wakes the desktop app for a
-# biometric unlock. The unconditional
-#   export GITLAB_NPM_REGISTRY_TOKEN=$(op read …)
-# that used to sit at the very bottom of this file therefore charged that to
-# every new terminal, including the many that never touch npm — and it sat after
-# the .zshrc.local block that the comment below calls the last line of the file.
-#
-# No token is written to a config file anywhere; each consumer reads a reference:
-#   npm        ~/.npmrc already interpolates ${GITLAB_NPM_REGISTRY_TOKEN}
-#   terraform  TF_TOKEN_gitlab_com is read natively (Terraform >= 1.2) and
-#              outranks any credentials block, so ~/.terraformrc is redundant
-#   golang     no env var at all — git-credential-op-gitlab, wired up in
-#              ~/.config/git/config, serves git, and the go command shares it via
-#              GOAUTH="git $HOME" (set with `go env -w`, so gopls sees it too).
-#              netrc could not have worked here: its format holds literals only,
-#              never a reference. `opread go` just pre-warms git's credential
-#              cache; there is nothing for it to export.
-#
-#   opread            # all three
-#   opread npm        # one of npm | tf,terraform | go,golang
-#   opread npm,go     # comma- or space-separated
-opread() {
-  local -a targets
-  local arg tok cred rc=0
-
-  # Secure notes in the Employee vault, so the token is the note body: notesPlain.
-  # The Go token is deliberately missing from this list — git-credential-op-gitlab
-  # owns it, and duplicating the reference here would give it two sources of truth.
-  local npm_item='op://Employee/gitlab-access-token-api_read-package-registry/notesPlain'
-  local tf_item='op://Employee/gitlab-access-token-api_read-terraform/notesPlain'
-
-  # Joining the arguments on ',' and splitting the result back on ',' normalises
-  # `opread npm go` and `opread npm,go` to one list. With no arguments the join
-  # yields an empty string, which zsh splits to nothing, so the loop never runs
-  # and the default below takes over.
-  for arg in ${(s:,:)${(j:,:)@}}; do
-    case "$arg" in
-      npm)          targets+=(npm) ;;
-      tf|terraform) targets+=(tf) ;;
-      go|golang)    targets+=(go) ;;
-      all)          targets=(npm tf go) ;;
-      *) print -u2 "opread: unknown target '$arg' (want npm, tf, go, all)"; return 2 ;;
-    esac
-  done
-  (( $#targets )) || targets=(npm tf go)
-  targets=(${(u)targets})   # `opread npm npm` should cost one 1Password call
-
-  command -v op >/dev/null 2>&1 || {
-    print -u2 "opread: the 1Password CLI (op) is not on PATH."
-    return 1
-  }
-
-  for arg in $targets; do
-    case "$arg" in
-      npm)
-        # Read into a local and test *that* — never `export X=$(op read …)`.
-        # export is a builtin, so the shell sees the builtin's status (always 0)
-        # rather than the substitution's, and a failed read would quietly export
-        # an empty token. Verified: `export FOO=$(false)` exits 0 where the bare
-        # `FOO=$(false)` exits 1. Same trap the `y` function above documents.
-        if tok=$(op read --no-newline "$npm_item") && [[ -n "$tok" ]]; then
-          export GITLAB_NPM_REGISTRY_TOKEN="$tok"
-          print "opread: npm  → GITLAB_NPM_REGISTRY_TOKEN"
-        else
-          print -u2 "opread: npm  ✗ could not read the package-registry token"
-          rc=1
-        fi
-        ;;
-      tf)
-        if tok=$(op read --no-newline "$tf_item") && [[ -n "$tok" ]]; then
-          export TF_TOKEN_gitlab_com="$tok"
-          print "opread: tf   → TF_TOKEN_gitlab_com"
-        else
-          print -u2 "opread: tf   ✗ could not read the Terraform token"
-          rc=1
-        fi
-        ;;
-      go)
-        # Nothing to export: the credential helper is already on demand by
-        # construction. What this buys is taking the 1Password unlock *now*,
-        # interactively, instead of leaving it to the first `go mod download` —
-        # or worse to a background gopls, which would raise a Touch ID prompt
-        # with no visible cause. `fill` runs the helper chain, but only `approve`
-        # seeds the cache daemon; fill on its own does not store what it read.
-        if cred=$(printf 'protocol=https\nhost=gitlab.com\n\n' \
-                    | GIT_TERMINAL_PROMPT=0 git credential fill 2>/dev/null) \
-           && [[ "$cred" == *password=* ]]; then
-          printf '%s\n\n' "$cred" | git credential approve
-          print "opread: go   → gitlab.com cached for git and go (8h)"
-        else
-          print -u2 "opread: go   ✗ no password returned for gitlab.com"
-          rc=1
-        fi
-        ;;
-    esac
-  done
-
-  return $rc
 }
 
 # Machine/work-specific settings (Angular CLI completion, Docker host, STM32,

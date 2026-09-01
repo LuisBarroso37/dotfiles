@@ -26,24 +26,25 @@ autostart = true
 
 [ai]
 # The `?` key generates a command from a natural-language description. Off by
-# default upstream; enabled here for that one purpose.
+# default upstream; enabled here for that one purpose. The opening request is
+# minimal already — [ai.opening] send_cwd and send_last_command both default to
+# false, so they are left unset.
 #
-# The opening request really is minimal — [ai.opening] send_cwd and
-# send_last_command both default to false, so they are left unset.
+# The capability pins below are the point of this section. As of 18.19.0 the
+# assistant can *request* four further capabilities — history search, stored
+# command output, file read/write, bash execution — and each one, left unset,
+# defaults to "enabled, and the ai will ask for permission", with requests going
+# to Atuin's hosted endpoint unless [ai] endpoint is overridden. On a machine
+# whose shell history is thousands of commands run against regulated production
+# systems, "there is a prompt" is not an adequate control: one distracted `y`
+# ships sensitive context to a third party. So they are pinned off explicitly
+# rather than left to a default upstream is free to change. Command generation
+# itself needs none of them.
 #
-# What is NOT minimal is the tool set. An earlier comment here claimed "Atuin
-# sends only OS and shell name/version, not shell history"; that is false for
-# 18.18.1. The assistant can *request* four further capabilities, and each one is
-# enabled-by-default-with-a-prompt when left unset (settings.rs:648-657,
-# `None` = "defaults to enabled, and the ai will ask for permission"):
-# history search, stored command output, file read/write, and bash execution.
-# Requests go to Atuin's hosted endpoint unless [ai] endpoint is overridden.
-#
-# On a machine whose shell history is thousands of commands run against a
-# PHI-handling healthcare platform, "there is a prompt" is not an adequate
-# control — one distracted `y` exports patient-adjacent context to a third party.
-# So the capabilities are pinned off explicitly rather than left to a default that
-# upstream is free to change. Command generation still works: it needs none of them.
+# All of it is dormant until `atuin login` — there is no sync account on this
+# machine (`atuin doctor` reports "sync": null) and the hosted assistant needs
+# one. Pinning before login is the right order: after it, an unset capability is
+# live on the first prompt.
 enabled = true
 
 [ai.capabilities]

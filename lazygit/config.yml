@@ -14,22 +14,27 @@ os:
   # `:line` command can fire before the buffer is loaded. Use a single --remote-send
   # with :e +line filename — one atomic Vim command, no race.
   editAtLine: '[ -z "$NVIM" ] && nvim +{{line}} -- {{filename}} || (nvim --server "$NVIM" --remote-send "q" && nvim --server "$NVIM" --remote-send ":e +{{line}} {{filename}}<CR>")'
-
 git:
-  # Two pagers, cycled in the diff view with `|` (cyclePagers); `\` reverses.
-  # The `name` shows in the diff header so you can see which mode is active.
+  # Two diff renderers, cycled in the diff view with `|` (cycleDiffRenderers);
+  # `\` reverses it (cycleDiffRenderersReverse). The `name` shows in the diff
+  # header so you can see which mode is active.
   #
-  # 1) delta side-by-side. --paging=never (lazygit does its own paging); the
-  #    catppuccin theme comes from ~/.config/git/config (delta reads it itself).
-  #    --hunk-header-style=omit hides the @@ header (git's "enclosing symbol"
-  #    guess uses a weak regex with no real TS driver, so it's often wrong; line
-  #    numbers already show in the gutter). Hyperlinks make file:line clickable.
-  # 2) native lazygit unified diff — an entry with NO pager/externalDiffCommand
-  #    falls back to lazygit's built-in renderer; colorArg: always keeps git's
-  #    own diff colors. This is the original unified view (delta is not involved),
-  #    which is what `|` now toggles back to.
-  pagers:
+  # 1) delta. Only the lazygit-specific args live here: --paging=never (lazygit
+  #    does its own paging), --hunk-header-style=omit (git's "enclosing symbol"
+  #    guess uses a weak regex with no real TS driver, so it's often wrong, and
+  #    line numbers already show in the gutter), and the lazygit-edit:// link
+  #    format that makes file:line clickable back into the parent Neovim.
+  #    side-by-side, hyperlinks and the catppuccin theme are NOT repeated here —
+  #    delta reads git config itself, so they come from ~/.config/git/config and
+  #    are configured in one place.
+  # 2) type: rawGit — git's own diff output with no renderer in between. With no
+  #    `args` that is plain `git diff`, i.e. the unified view, which is what `|`
+  #    toggles back to. (The other types are `extDiff`, a git external diff
+  #    command, and `stdinFilter`, a pager fed the diff on stdin. `colorArg` is
+  #    documented as stdinFilter-only, so it is omitted — and `always` is its
+  #    default regardless.)
+  diffRenderers:
     - name: side-by-side (delta)
-      pager: delta --paging=never --side-by-side --hunk-header-style=omit --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
+      command: delta --paging=never --hunk-header-style=omit --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
     - name: unified (native)
-      colorArg: always
+      type: rawGit

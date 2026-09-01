@@ -1,8 +1,9 @@
 return {
   "petertriho/nvim-scrollbar",
   event = "BufReadPost",
-  -- catppuccin is a dependency because config() reads its palette; this guarantees
-  -- it's loaded first (it already is in practice via priority 1000, but be explicit).
+  -- catppuccin is a dependency because config() reads its palette. LazyVim declares
+  -- catppuccin `lazy = true`, so nothing else guarantees it is loaded by BufReadPost —
+  -- this dependency is what actually forces it to load first.
   dependencies = { "lewis6991/gitsigns.nvim", "catppuccin/nvim" },
   config = function()
     -- Pull the handle color from the catppuccin palette so it tracks the flavor

@@ -1,7 +1,22 @@
 onboarding = false
 # Herdr configuration — https://herdr.dev/docs/configuration/
+#
+# `onboarding = false` above the header is herdr's own write-back, not hand
+# edits. Note that ~/.config/herdr/config.toml is a symlink into this repo, so
+# anything herdr writes lands on the tracked file: in particular
+# `herdr config reset-keys` ("back up config.toml and remove custom
+# keybindings") would strip every [keys] override below *and* these comments
+# from the repo, not from a throwaway copy.
 
 [theme]
+# Almost certainly already the default — herdr 0.8.0's embedded default-config
+# template ships `# name = "catppuccin"` commented out, the same convention it
+# uses for the other defaults (`# onboarding = true`, `# auto_switch = false`),
+# and "catppuccin" is the fallback string next to "unknown theme, falling back"
+# in the binary. Not provable from the CLI, though: `herdr config check` does
+# not validate theme names and there is no `config get`. Kept as a deliberate
+# pin rather than deleted — the theme is user-visible and this is pre-1.0
+# software that can change its default without it being obvious.
 name = "catppuccin"
 
 [keys]

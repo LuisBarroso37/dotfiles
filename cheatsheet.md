@@ -51,25 +51,34 @@
 
 > Three GitLab personal access tokens live in 1Password and are fetched **on
 > demand** — never at shell startup, because a cold `op read` wakes the desktop
-> app for a biometric unlock (~6-8s; ~1.2s warm). No token is written to any
-> config file: each consumer reads a reference instead.
+> app for a biometric unlock (~6-8s; ~1.2s warm).
 
 | Command | Effect |
 | --- | --- |
 | `opread` | all three (same as `opread all`) |
 | `opread npm` | exports `GITLAB_NPM_REGISTRY_TOKEN`, which `~/.npmrc` interpolates as `${GITLAB_NPM_REGISTRY_TOKEN}` |
 | `opread tf` | exports `TF_TOKEN_gitlab_com`, read natively by Terraform ≥ 1.2 — no `~/.terraformrc` needed |
-| `opread go` | pre-warms git's credential cache for gitlab.com (8h) |
+| `opread go` | writes `~/.netrc` (mode 600) with the golang-private-modules token |
 
 Selectors accept long spellings and commas: `opread terraform,golang`.
 
-**Go needs no token in your environment.** `~/.local/bin/git-credential-op-gitlab`
-is registered in `~/.config/git/config` and calls `op read` when git asks for
-gitlab.com credentials; `go` shares that same helper through
-`GOAUTH="git $HOME"`, set alongside `GOPRIVATE=gitlab.com` with `go env -w` so
-gopls sees it too. A `cache --timeout=28800` helper sits in front, so the
-1Password unlock happens once a day rather than once per fetch. `opread go` just
-does that unlock at a moment you chose.
+**npm and terraform read a reference; go can't.** Both env vars point at a
+1Password path, so no token is ever written to disk for them. Go is different:
+its own HTTP client authenticates the go-import discovery GET it needs for a
+nested GitLab group path (this project's modules aren't at the repo root, so
+Go can't skip discovery the way it does for GitHub) using `~/.netrc`, and
+`.netrc`'s format holds a literal password, never a reference — there is
+nothing to interpolate. A `GOAUTH="git $HOME"` + `op read`-backed git credential
+helper (the old `~/.local/bin/git-credential-op-gitlab`, wired into
+`~/.config/git/config`) was tried and **does not work**: instrumented it and
+confirmed the helper is never even called for that discovery request — GitLab
+isn't in `cmd/go`'s hardcoded VCS-host table, the unauthenticated discovery GET
+404s, and `go` falls back to guessing the repo root from the first two path
+segments, which is wrong for a nested group and fails with a
+"project not found" `git ls-remote` error. So `opread go` writes the literal
+token to `~/.netrc` instead — still pulled fresh from 1Password on demand, never
+pasted by hand or committed anywhere, just landing in a file because that's the
+only format Go's discovery step actually honors.
 
 ---
 

@@ -72,7 +72,13 @@ criterion() { printf '\n%s%s%s\n' "$C_BOLD" "$1" "$C_OFF"; }
 ok()   { printf '  %s✓%s %s\n' "$C_OK" "$C_OFF" "$1"; }
 warn() { printf '  %s!%s %s\n' "$C_WARN" "$C_OFF" "$1"; WARNS=$((WARNS + 1)); }
 fail() { printf '  %s✗%s %s\n' "$C_FAIL" "$C_OFF" "$1"; FAILS=$((FAILS + 1)); FAILED_CHECKS+=("$1"); }
-skip() { printf '  %s- %s (skipped: %s)%s\n' "$C_DIM" "$1" "$2" "$C_OFF"; SKIPS=$((SKIPS + 1)); }
+# `${2:-}` is deliberate, not defensive noise. Under `set -u` an unbound $2 is
+# FATAL in a non-interactive shell: the whole script dies at the call site with
+# `$2: unbound variable`, no verdict printed. That is exactly what a one-argument
+# `skip "…"` did on every non-Darwin machine — C5 through C9 never ran and the
+# gate exited nonzero for a reason unrelated to the repo's health. A reporting
+# helper must never be able to kill the run it is reporting on.
+skip() { printf '  %s- %s (skipped: %s)%s\n' "$C_DIM" "$1" "${2:-no reason given}" "$C_OFF"; SKIPS=$((SKIPS + 1)); }
 detail() { [ "$VERBOSE" -eq 1 ] && printf '    %s%s%s\n' "$C_DIM" "$1" "$C_OFF"; return 0; }
 
 # Run a command in a pseudo-terminal. TUI apps gate real work on UIEnter, so a
@@ -136,6 +142,12 @@ cd "$DOTFILES" || { echo "check.sh: cannot cd to $DOTFILES" >&2; exit 2; }
 BREW_PKGS="$(awk '/^_formulae=\(/{f=1;next} f&&/^\)/{exit} f{print}' install.sh \
   | sed -e 's/#.*//' -e 's/[[:space:]\\]//g' | grep -v '^$' || true)"
 
+# Where stow deploys the root package. Derived, so it cannot disagree with the
+# .stowrc the installer actually uses — and asserted below (see C3), because this
+# sed only understands one spelling. `-t ~/.config`, or a trailing comment on the
+# line, both yield an empty or nonsensical STOW_TARGET, and an empty target used
+# to sail straight through C3 printing green ticks. Every other derivation in
+# this file goes through derived_or_fail; this one now does too.
 STOW_TARGET="$(sed -n 's/^--target=//p' .stowrc | sed "s|^~|$HOME|" || true)"
 
 # What stow actually deploys, asked of stow itself: a dry run into a PRISTINE
@@ -148,14 +160,19 @@ STOW_TARGET="$(sed -n 's/^--target=//p' .stowrc | sed "s|^~|$HOME|" || true)"
 # redundant --ignore lines were correctly deleted from .stowrc, this check started
 # reporting README.md as an undeployed package. Asking stow cannot drift from
 # stow.
+#
+# No exit-status plumbing here, deliberately. This used to capture `rc=$?` after
+# the pipeline and `return $rc` — but with no `pipefail` in effect for it that was
+# sed's status, not stow's, and sed exits 0 over empty input, so the value could
+# only ever be 0. The single caller discarded it anyway. The real signal is the
+# emptiness of the output, and derived_or_fail at the call site asserts exactly
+# that. Dead plumbing that looks like a safety net is worse than none.
 stow_deploys() {
-  local probe rc
+  local probe
   probe="$(mktemp -d)" || return 1
   stow -n -v -d "$DOTFILES" -t "$probe" . 2>&1 \
     | sed -n 's/^LINK: \([^ ]*\) =>.*/\1/p'
-  rc=$?
   rmdir "$probe" 2>/dev/null || rm -rf "$probe"
-  return $rc
 }
 
 # A derivation that silently returns nothing is worse than no check: it reports
@@ -185,7 +202,12 @@ REMOVED_TOKENS="pyenv wtclean migrate.sh"
 
 # Files that must never be tracked: machine-local, secret, or runtime state.
 # The repo promises these are gitignored; this asserts the promise.
-MUST_NOT_TRACK="install.local.sh sesh.local.toml .DS_Store
+# Every entry must be a path INSIDE the repo, or the check is theatre:
+# `git ls-files --error-unmatch` is repo-relative, so a name that only ever
+# exists elsewhere can never match. `sesh.local.toml` was listed here and lives
+# at ~/.config/sesh.local.toml — outside the repo — so that entry was incapable
+# of firing and has been removed.
+MUST_NOT_TRACK="install.local.sh .DS_Store
 tmux/plugins/tpm herdr/session.json"
 
 printf '%s%s%s\n' "$C_BOLD" "check.sh — $DOTFILES @ $(git rev-parse --short HEAD 2>/dev/null || echo '?')" "$C_OFF"
@@ -213,6 +235,17 @@ if command -v zsh >/dev/null 2>&1; then
   # command 'in_pty'" and C2 reported "zsh -i exited 127" no matter what .zshrc
   # did, masking the real startup status. script(1) runs its command through sh,
   # which resolves timeout fine.
+  #
+  # SHELL_SESSIONS_DISABLE=1 is pinned for the same reason as `</dev/null`: it
+  # takes something the probe INHERITED out of the answer. TERM_PROGRAM is
+  # inherited into the pty, and when it says Apple_Terminal, /etc/zshrc_Apple_Terminal
+  # switches on per-session save/restore and writes its bookkeeping into the
+  # stream — every run, on a perfectly healthy config, with nothing in this repo
+  # able to silence it. That is a permanent unfixable warning, i.e. exactly the
+  # trained-to-ignore failure the comment above argues against. Set here rather
+  # than relying on zsh/.zshenv exporting it: the probe's job is to test the
+  # shell, so it must not depend on the shell it is testing to sanitise itself.
+  export SHELL_SESSIONS_DISABLE=1
   pty_cmd=(zsh -i -c exit)
   [ -n "$TIMEOUT_BIN" ] && pty_cmd=("$TIMEOUT_BIN" -k 5 30 "${pty_cmd[@]}")
   zsh_out="$(in_pty "${pty_cmd[@]}")"
@@ -378,37 +411,93 @@ fi
 
 criterion "C3 — stow closure"
 
-if command -v stow >/dev/null 2>&1; then
-  mkdir -p "$STOW_TARGET" 2>/dev/null || true
-  mkdir -p "$HOME/.local/bin" 2>/dev/null || true
-  for spec in "$STOW_TARGET|." "$HOME|zsh" "$HOME/.local/bin|bin"; do
+if ! command -v stow >/dev/null 2>&1; then
+  fail "stow not installed"
+elif ! derived_or_fail "stow target (--target= in .stowrc)" "$STOW_TARGET"; then
+  : # derived_or_fail already reported it; everything below needs the target
+elif [ ! -d "$STOW_TARGET" ]; then
+  # Not `mkdir -p` any more. Creating the target to make the check pass is the
+  # check agreeing with itself: if .stowrc names a directory that does not exist,
+  # that is the finding, not a setup step.
+  fail "stow target '$STOW_TARGET' (from .stowrc) is not a directory"
+else
+  for spec in "$STOW_TARGET|." "$HOME|zsh"; do
     tgt="${spec%%|*}"; pkg="${spec##*|}"
-    out="$(stow --no --restow --target="$tgt" "$pkg" 2>&1)" || true
-    conflicts="$(printf '%s\n' "$out" | grep -E 'existing target|cannot stow' || true)"
-    if [ -n "$conflicts" ]; then
-      fail "stow conflicts for package '$pkg' → $tgt"
-      printf '%s\n' "$conflicts" | head -10 | sed 's/^/      /'
-    else
+    # The EXIT STATUS is the primary signal, and it used to be thrown away with
+    # `|| true` while only two substrings were matched. That made this a check
+    # that could not fail: `--target=/nonexistent-target-xyz` (stow errors and
+    # prints its usage, exit 1) and `--target=""` ("Option target requires an
+    # argument", exit 1) both reported a green ✓, and so did a package that no
+    # longer exists in the repo at all — `stow: ERROR: The stow directory … does
+    # not contain package bin` exits 2 and matches neither substring, so the
+    # deleted bin package kept passing after its deletion. Status first; the
+    # conflict grep is now only there to print the interesting lines when stow
+    # does object.
+    if out="$(stow --no --restow --target="$tgt" "$pkg" 2>&1)"; then
       ok "stow --restow '$pkg' → $tgt predicts no conflicts"
+    else
+      rc=$?
+      fail "stow --restow '$pkg' → $tgt failed (exit $rc)"
+      conflicts="$(printf '%s\n' "$out" | grep -E 'existing target|cannot stow' || true)"
+      printf '%s\n' "${conflicts:-$out}" | head -10 | sed 's/^/      /'
     fi
   done
 
-  # An entry that is neither stowignored nor present in the target is config the
-  # user believes is deployed and is not.
+  # An entry stow would deploy that is not a link back into this repo is config
+  # the user believes is deployed and is not.
+  #
+  # The weaker version of this test — `[ -e "$STOW_TARGET/$entry" ]` — proved
+  # strictly less than verify_install already had: it passes on a plain real
+  # directory containing no links whatsoever, and verify_install separately
+  # asserts a representative FILE from each of these packages resolves into
+  # $DOTFILES. What this check is FOR, and the one thing verify_install's
+  # hardcoded path list cannot do, is cover a package added to the repo that
+  # nobody remembered to add to that list. To earn that it has to assert the
+  # link, so it does.
+  #
+  # Both stow layouts are accepted, because both are correct:
+  #   FOLDED   — the target dir did not exist, so stow made ONE symlink for the
+  #              whole package (~/.config/atuin → ../dotfiles/atuin).
+  #   UNFOLDED — the target dir already existed, so stow made per-file links
+  #              inside a real directory (this is what ~/.config/herdr looks
+  #              like, deliberately, since herdr writes runtime state there).
+  # Requiring one or the other would fail on a healthy machine the first time
+  # something caused stow to unfold a package.
   deployed="$(stow_deploys)"
   if derived_or_fail "stow deploy set" "$deployed"; then
     undeployed=""
     for entry in $deployed; do
-      [ -e "$STOW_TARGET/$entry" ] || undeployed="$undeployed $entry"
+      path="$STOW_TARGET/$entry"
+      if [ -L "$path" ]; then
+        # Folded: the entry itself is the link. It must point into the repo.
+        case "$(readlink -f "$path" 2>/dev/null)" in
+          "$DOTFILES"/*|"$DOTFILES") ;;
+          *) undeployed="$undeployed $entry(links-outside-repo)" ;;
+        esac
+      elif [ -d "$path" ]; then
+        # Unfolded: a real directory. At least one thing under it must be a link
+        # into the repo, or it is an unrelated directory that merely shares the
+        # name — the exact case the old -e test could not tell apart.
+        found=0
+        for child in "$path"/* "$path"/.[!.]*; do
+          [ -L "$child" ] || continue
+          case "$(readlink -f "$child" 2>/dev/null)" in
+            "$DOTFILES"/*) found=1; break ;;
+          esac
+        done
+        [ "$found" -eq 1 ] || undeployed="$undeployed $entry(real-dir,no-links-into-repo)"
+      elif [ -e "$path" ]; then
+        undeployed="$undeployed $entry(not-a-link)"
+      else
+        undeployed="$undeployed $entry(absent)"
+      fi
     done
     if [ -n "$undeployed" ]; then
-      fail "entries stow would deploy but that are absent at $STOW_TARGET:$undeployed"
+      fail "entries stow would deploy but that are not linked into the repo at $STOW_TARGET:$undeployed"
     else
-      ok "all $(printf '%s\n' "$deployed" | grep -c .) entries stow deploys are present at $STOW_TARGET"
+      ok "all $(printf '%s\n' "$deployed" | grep -c .) entries stow deploys are linked into the repo at $STOW_TARGET"
     fi
   fi
-else
-  fail "stow not installed"
 fi
 
 # ---------------------------------------------------------------------------
@@ -430,33 +519,36 @@ if [ -f "$DOTFILES/install.common.sh" ]; then
       fail "install.common.sh verify_install reports problems"
       printf '%s\n' "$verify_out" | grep -E '✗|!' | sed 's/^/      /'
     fi
+
+    # INSIDE the source block, deliberately. verify_install checks a hardcoded
+    # subset of the formulae install.sh installs; deriving the full list catches
+    # the drift case — a formula added to install.sh but never added to the
+    # verify list, so a machine missing it still reports a clean install.
+    #
+    # This loop needs have_tool, which install.common.sh defines: it knows about
+    # tools that ship under either of two binary names (sevenzip → 7zz or 7z).
+    # It used to sit outside this block and guard itself with
+    # `command -v have_tool || type have_tool`, which was two mistakes in one
+    # line. `command -v` already resolves shell functions, so the `type` half
+    # could never change the answer; and the else-branch it guarded called
+    # bin_name — from the same sourced file — so in the only situation the guard
+    # existed for, the fallback was itself `command not found`. Running here
+    # means both functions are defined by construction and no guard is needed.
+    if [ "$(uname -s)" != "Darwin" ]; then
+      skip "BREW_PKGS check" "install.sh is macOS-only — formula names differ on Linux"
+    elif derived_or_fail "install.sh formula list" "$BREW_PKGS"; then
+      missing=""
+      for pkg in $BREW_PKGS; do
+        have_tool "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
+      done
+      if [ -n "$missing" ]; then
+        warn "installed by install.sh but not on PATH:$missing"
+      else
+        ok "all $(printf '%s\n' "$BREW_PKGS" | grep -c . ) derived formulae resolve to a binary"
+      fi
+    fi
   else
     fail "could not source install.common.sh"
-  fi
-
-  # verify_install checks a hardcoded subset of the formulae install.sh
-  # installs. Deriving the full list catches the drift case: a formula added to
-  # install.sh but never added to the verify list, so a machine missing it
-  # still reports a clean install.
-  if [ "$(uname -s)" != "Darwin" ]; then
-    skip "BREW_PKGS check (install.sh is macOS-only — formula names differ on Linux)"
-  elif derived_or_fail "install.sh formula list" "$BREW_PKGS"; then
-    missing=""
-    for pkg in $BREW_PKGS; do
-      # Prefer install.common.sh's own have_tool when it exists: it knows about
-      # tools that ship under either of two binary names (sevenzip → 7zz or 7z).
-      if command -v have_tool >/dev/null 2>&1 || type have_tool >/dev/null 2>&1; then
-        have_tool "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
-      else
-        b="$(bin_name "$pkg" 2>/dev/null || echo "$pkg")"
-        command -v "$b" >/dev/null 2>&1 || missing="$missing $pkg"
-      fi
-    done
-    if [ -n "$missing" ]; then
-      warn "installed by install.sh but not on PATH:$missing"
-    else
-      ok "all $(printf '%s\n' "$BREW_PKGS" | grep -c . ) derived formulae resolve to a binary"
-    fi
   fi
 else
   fail "install.common.sh missing"
@@ -487,6 +579,31 @@ if [ "$(uname -s)" = "Darwin" ]; then
     fail "$HOME/.config/karabiner is a real directory, not a symlink — Karabiner edits are not reaching the repo (run ./install.sh)"
   else
     fail "$HOME/.config/karabiner missing (run ./install.sh)"
+  fi
+
+  # …and that the config in the repo is VALID, which is a different question
+  # from whether the link points at it. This is the karabiner failure mode that
+  # actually matters and the one with no visible symptom: on a config it cannot
+  # parse, Karabiner-Elements does not fall over or revert the file — it keeps
+  # running the last-good config in memory and posts a notification. Miss the
+  # notification and you have a tracked, committed, permanently-dead config that
+  # every check in this file otherwise reports as healthy, because the link is
+  # fine, the file exists, and the daemon is running.
+  #
+  # karabiner_cli --lint-complex-modifications takes karabiner.json directly.
+  # Guarded on the binary existing: it ships inside the Karabiner-Elements app
+  # bundle, so a machine that has the repo but not the app is not a finding.
+  _kara_cli="/Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli"
+  _kara_json="$DOTFILES/macos/karabiner/karabiner.json"
+  if [ ! -x "$_kara_cli" ]; then
+    skip "karabiner.json lint" "karabiner_cli not installed"
+  elif [ ! -f "$_kara_json" ]; then
+    fail "$_kara_json missing"
+  elif _kara_lint="$("$_kara_cli" --lint-complex-modifications "$_kara_json" 2>&1)"; then
+    ok "karabiner.json lints clean"
+  else
+    fail "karabiner.json is not valid — Karabiner will silently keep the last-good config"
+    printf '%s\n' "$_kara_lint" | head -10 | sed 's/^/      /'
   fi
 fi
 
@@ -628,8 +745,9 @@ fi
 # C6 — No resurrected config
 # ---------------------------------------------------------------------------
 # The cheap, scriptable slice of "no dead config": things removed on purpose
-# must not come back. This file and the review log name the tokens, so both are
-# excluded or the check reports itself.
+# must not come back. check.sh itself is excluded from the search — it has to
+# name the tokens to look for them, so without ':!check.sh' the check reports
+# itself as the regression, every time.
 
 criterion "C6 — no resurrected config"
 
@@ -639,7 +757,10 @@ for token in $REMOVED_TOKENS; do
   # worth keeping; the regression this catches is the token reappearing in live
   # config. Filtering on the comment marker keeps the check from arguing with
   # the repo's own history.
-  hits="$(git grep -n -i -- "$token" -- \
+  # -F, matching C5's prefix-attribution grep. These are literal tokens, not
+  # patterns: without it the `.` in `migrate.sh` is a wildcard and `migrateXsh`
+  # trips the check.
+  hits="$(git grep -n -i -F -- "$token" -- \
     ':!check.sh' 2>/dev/null \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(--|#|//)' || true)"
   if [ -n "$hits" ]; then
@@ -710,7 +831,7 @@ fi
 # problem. Patterns kept narrow: broad ones fire on the word "token" in a
 # comment and train you to ignore the check.
 secret_hits="$(git grep -nIE \
-  '(gh[pousr]_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|xox[baprs]-[A-Za-z0-9-]{10,})' \
+  '(gh[pousr]_[A-Za-z0-9]{16,}|glpat-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|xox[baprs]-[A-Za-z0-9-]{10,})' \
   -- ':!check.sh' 2>/dev/null || true)"
 if [ -n "$secret_hits" ]; then
   fail "credential-shaped strings in tracked files:"

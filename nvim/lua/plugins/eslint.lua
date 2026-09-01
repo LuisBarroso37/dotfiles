@@ -35,10 +35,7 @@ return {
             bufnr = buf,
             formatters = {}, -- no CLI formatters; eslint LSP only
             lsp_format = "prefer", -- run the LSP even though prettier exists
-            -- Note: `name` is not a valid conform.FormatOpts key — it is silently
-            -- ignored. LSP client filtering is not currently possible through conform;
-            -- in practice eslint is the only LSP with formatting capability for these
-            -- filetypes, so it runs exclusively without any explicit filter.
+            name = "eslint", -- only the eslint client; without it vtsls also formats
             -- Projects whose first fixAll has to build a whole TS program can raise
             -- this from their own .nvim.lua; conform's default is fine elsewhere.
             timeout_ms = vim.g.eslint_format_timeout_ms,

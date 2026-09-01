@@ -158,6 +158,22 @@ cat > ~/.gitconfig-personal <<'EOF'
 EOF
 ```
 
+### 5. Set up private-registry tokens (optional)
+
+Only needed if you use `npm`, `terraform`, or `go` against a private,
+token-gated registry. This repo doesn't ship any tokens or name any vault —
+that lives in an untracked `opread` shell function you write into
+`~/.zshrc.local` (see [cheatsheet.md](cheatsheet.md#gitlab-tokens-opread) for a
+worked example), pulling from whatever secrets manager you use. It fetches
+credentials **on demand** rather than at shell startup, since most terminals
+never touch these registries and shouldn't pay the unlock cost of one that does.
+
+npm and Terraform take an environment variable (`~/.npmrc` and `TF_TOKEN_<host>`
+respectively — neither ever needs the token written to disk). Go is the
+exception: its own HTTP client authenticates the module-discovery request with
+`~/.netrc`, whose format holds only a literal password, so there's no reference
+to export — the on-demand function has to (re)write that file instead.
+
 ---
 
 ## Updating an existing machine

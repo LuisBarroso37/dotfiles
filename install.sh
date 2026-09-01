@@ -157,18 +157,38 @@ unset _cask
 # .gitignore excludes it.
 echo "==> Wiring karabiner config"
 mkdir -p "$DOTFILES/macos/karabiner"
+mkdir -p "$HOME/.config"
 # A pre-existing real directory holds this machine's own config and runtime
 # state — move it aside rather than rm -rf it, so a bad guess here is recoverable.
+#
+# _karabiner_ok gates the ln below, and that gate is the whole point. This was an
+# `if … mv … && echo …; fi` with nothing downstream checking it: a failed mv (a
+# read-only backup volume, a stale ~/.dotfiles-backup owned by another user) just
+# short-circuited the && and fell through to the ln, which then ran against a
+# still-real directory. `ln -sfn` does NOT refuse that — -n only declines to
+# dereference a symlink-to-directory — so it created a NESTED link at
+# ~/.config/karabiner/karabiner, exited 0, recorded nothing in FAILED_PKGS, and
+# left Karabiner reading its own untouched config while the run reported success.
+_karabiner_ok=1
 if [ -d "$HOME/.config/karabiner" ] && [ ! -L "$HOME/.config/karabiner" ]; then
   mkdir -p "$BACKUP"
-  mv "$HOME/.config/karabiner" "$BACKUP/karabiner" \
-    && echo "   ↳ backed up $HOME/.config/karabiner → $BACKUP/karabiner"
+  if mv "$HOME/.config/karabiner" "$BACKUP/karabiner"; then
+    echo "   ↳ backed up $HOME/.config/karabiner → $BACKUP/karabiner"
+  else
+    _karabiner_ok=0
+    FAILED_PKGS+=" karabiner-config"
+    echo "!! could not move $HOME/.config/karabiner → $BACKUP/karabiner" >&2
+    echo "   leaving the existing directory alone — linking over it would nest" >&2
+    echo "   a symlink inside it rather than replace it." >&2
+  fi
 fi
-mkdir -p "$HOME/.config"
 # -n so a re-run replaces the existing link instead of dropping a nested
 # "karabiner" link inside the directory it already points at.
-ln -sfn "$DOTFILES/macos/karabiner" "$HOME/.config/karabiner" \
-  || { FAILED_PKGS+=" karabiner-config"; echo "!! failed to link karabiner config dir" >&2; }
+if [ "$_karabiner_ok" -eq 1 ]; then
+  ln -sfn "$DOTFILES/macos/karabiner" "$HOME/.config/karabiner" \
+    || { FAILED_PKGS+=" karabiner-config"; echo "!! failed to link karabiner config dir" >&2; }
+fi
+unset _karabiner_ok
 
 # Rectangle: RectangleConfig.json is Rectangle's own export format, not a standard
 # plist — `defaults import` does not apply.

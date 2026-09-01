@@ -86,20 +86,31 @@ return {
   -- that supports textDocument/formatting OR textDocument/rangeFormatting, and
   -- jsonls advertises both, so clearing only the first would leave it active.
   --
-  -- Scope is JSON alone: no yaml-language-server is installed, and marksman
+  -- vtsls needs the same treatment for the same reason. prettier is not installed
+  -- globally on this machine — it resolves only via node_modules — so in a JS repo
+  -- before `npm install`, or in any tree without a prettier config, conform reports
+  -- zero sources for .ts/.tsx too and vtsls (which advertises both formatting
+  -- capabilities) rewrites the whole file on `:w`. Stripping the capability leaves
+  -- prettier as the only path to formatting TS, which is the intent.
+  --
+  -- Scope is jsonls + vtsls: no yaml-language-server is installed, and marksman
   -- reports documentFormattingProvider = false, so markdown/yaml never had a
   -- fall-through to lose.
+  --
+  -- Registered from an `opts` function rather than `opts.setup.<server>`: LazyVim
+  -- dispatches `opts.setup[server] or opts.setup["*"]`, one handler per server, and
+  -- its typescript extra already owns `setup.vtsls` (the moveToFileRefactoring /
+  -- rename command wiring). Adding our own there would silently replace it.
+  -- `Snacks.util.lsp.on` is just an LspAttach autocmd, so it composes instead.
   {
     "neovim/nvim-lspconfig",
-    opts = {
-      setup = {
-        jsonls = function()
-          Snacks.util.lsp.on({ name = "jsonls" }, function(_, client)
-            client.server_capabilities.documentFormattingProvider = false
-            client.server_capabilities.documentRangeFormattingProvider = false
-          end)
-        end,
-      },
-    },
+    opts = function()
+      for _, name in ipairs({ "jsonls", "vtsls" }) do
+        Snacks.util.lsp.on({ name = name }, function(_, client)
+          client.server_capabilities.documentFormattingProvider = false
+          client.server_capabilities.documentRangeFormattingProvider = false
+        end)
+      end
+    end,
   },
 }

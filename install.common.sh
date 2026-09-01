@@ -59,11 +59,16 @@ fi
 : "${NEXT_STEP_FIRST:=}"
 
 # Packages the caller's package step could not install, space-separated, folded
-# into verify_install's result. install.sh appends its failed formulae and casks
-# here because both of those steps are deliberately non-fatal, and something has
-# to remember that afterwards. Left empty on Linux: install.linux.sh does its own
-# best-effort accounting (MISSING) and installs fonts itself, so the loop in
-# verify_install that reads this simply has nothing to iterate over there.
+# into verify_install's result. BOTH installers append to it, because both of
+# their package steps are deliberately non-fatal and something has to remember
+# that afterwards.
+#
+# This used to say "left empty on Linux", and that was the whole bug: install.
+# linux.sh recorded its failures only in MISSING[], which is *printed* and never
+# consulted again, so a Linux run that could not install ghostty or the Nerd Font
+# still ended in "✓ all checks passed" and exit 0 — and, because that exit status
+# is what gates the login-shell switch at the end, went on to chsh anyway. It now
+# appends here too, exactly like install.sh's casks.
 : "${FAILED_PKGS:=}"
 
 # EVERY binary name a tool may answer to, primary first, space separated. This is
@@ -127,9 +132,46 @@ stow_with_backup() {
       [ -n "$out" ] && printf '%s\n' "$out"
       return 0
     fi
-    conflicts="$(printf '%s\n' "$out" \
-      | sed -n -e 's/^ *\* existing target is[^:]*: *//p' \
-               -e 's/^ *\* cannot stow .* over existing target \(.*\) since.*$/\1/p')"
+    # Stow reports conflicts as "  * <message>" lines (bin/stow's warn "  * $message").
+    # Stow.pm 2.4.1 emits FIVE distinct target conflicts and this parser used to
+    # understand two of them; the other three were dropped silently, so the loop
+    # below backed nothing up, the retry hit the identical conflict, and the user
+    # got three wasted attempts followed by "still reports conflicts" instead of
+    # a backup. Every form, with the path this has to extract underlined:
+    #
+    #   existing target is not owned by stow: X
+    #   existing target is neither a link nor a directory: X
+    #   existing target is stowed to a different package: X => Y
+    #   cannot stow non-directory P over existing directory target X
+    #   cannot stow directory P over existing non-directory target X
+    #   cannot stow P over existing target X since neither a link nor a directory…
+    #
+    # The "=> Y" case is the likely one after a package rename, and the old first
+    # expression matched it but yielded the literal "X => Y", which then failed the
+    # [ -e ] guard below and was skipped — a silent no-op that looked like a parse.
+    # Hence the ": strip" tail, applied to every extracted path.
+    #
+    # `t strip` after each pattern so the first match wins and one input line can
+    # never produce two output lines: the "since neither a link nor a directory"
+    # form is a prefix-match of the bare "over existing target X" form, and without
+    # the branch both would fire. Anything still unmatched is dropped by `d`, which
+    # is what keeps non-target conflicts ("source is an absolute symlink P => D",
+    # unresolvable by moving anything in $target) out of the backup loop.
+    conflicts="$(printf '%s\n' "$out" | sed -n -E '
+/^ *\* /!d
+s/^ *\* existing target is[^:]*: *//
+t strip
+s/^ *\* cannot stow .* over existing target (.*) since .*$/\1/
+t strip
+s/^ *\* cannot stow .* over existing (non-)?directory target (.*)$/\2/
+t strip
+s/^ *\* cannot stow .* over existing target (.*)$/\1/
+t strip
+d
+:strip
+s/ => .*$//
+p
+')" || conflicts=""
     if [ -z "$conflicts" ]; then
       printf '%s\n' "$out" >&2
       return 1
@@ -183,15 +225,10 @@ run_shared_tail() {
   mkdir -p "$HOME/.config"      # stow aborts if --target from .stowrc doesn't exist
   stow_with_backup "$HOME/.config" . || rc=1   # nvim, tmux, sesh, ghostty, starship, atuin, git, lazygit, yazi
   stow_with_backup "$HOME" zsh || rc=1         # zsh dotfiles live in ~, not ~/.config
-  # bin/ holds executables meant to be on PATH, not config, so it gets its own
-  # target (~/.local/bin, prepended to PATH by the first line of zsh/.zshrc) and
-  # is stowignored out of the '.' package above. Currently just the git
-  # credential helper git/config names for gitlab.com — which is why this is not
-  # optional: without it a fresh machine has the credential.helper line pointing
-  # at an executable that does not exist, and every gitlab.com fetch falls back
-  # to prompting.
-  mkdir -p "$HOME/.local/bin"   # same reason as ~/.config above
-  stow_with_backup "$HOME/.local/bin" bin || rc=1
+  # There is deliberately no bin/ package. gitlab.com HTTPS auth for `go get` on
+  # private modules is ~/.netrc, refreshed on demand by the `opread go` zsh
+  # function — itself untracked in ~/.zshrc.local because it names an employer
+  # 1Password vault. Nothing here installs or generates it.
 
   ## herdr is stowignored: it writes runtime state (logs, sockets, session.json)
   ## into ~/.config/herdr, so that directory has to stay a real directory rather
@@ -299,13 +336,24 @@ verify_install() {
     have_tool "$tool" || echo "   ! yazi preview backend missing: $tool (previews only)"
   done
 
-  # Packages the package step could not install. Both of install.sh's package
-  # steps are non-fatal on purpose, so their failures are only visible here — and
-  # a cask like the nerd font has no binary anywhere in the checks above to give it
-  # away. Empty on Linux (see the FAILED_PKGS contract at the top), so this loop
-  # does nothing there.
+  # Dev-time only, so warned about rather than failed on: both installers install
+  # it and check.sh's C8 criterion lints these very scripts with it, but nothing
+  # at runtime needs it — a machine without it still has a working config.
+  # (Comment deliberately not opened with the tool's own name: a `#` line starting
+  # with it is read by the linter as a malformed directive, SC1072/SC1073.)
+  # It was absent from both loops, which is how a run could satisfy "all checks
+  # passed" and then have check.sh skip C8 for a tool the install was supposed to
+  # provide. git and curl are deliberately NOT listed: nothing here could have run
+  # without curl (Homebrew's installer, every release download) or git (submodules,
+  # the TPM clone), so a check for them can only ever pass.
+  have_tool shellcheck || echo "   ! shellcheck missing (lints these install scripts; check.sh C8)"
+
+  # Packages the package step could not install. Every package step in both
+  # installers is non-fatal on purpose, so their failures are only visible here —
+  # and a cask like the nerd font has no binary anywhere in the checks above to
+  # give it away.
   for pkg in ${FAILED_PKGS-}; do
-    echo "   ✗ package did not install: $pkg"; _fail=1
+    echo "   ✗ package missing or unusable: $pkg"; _fail=1
   done
 
   # Check a representative config FILE per package, never the directory.

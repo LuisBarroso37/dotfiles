@@ -1,29 +1,5 @@
 return {
   "folke/snacks.nvim",
-  -- LazyVim's keymaps.lua registers <leader>gL (Snacks cwd git_log) unconditionally
-  -- via raw vim.keymap.set, not through the plugin keys spec — so keys = { false }
-  -- won't work (it runs before keymaps.lua and gets overwritten). VeryLazy+schedule
-  -- runs after keymaps.lua and wins.
-  init = function()
-    vim.api.nvim_create_autocmd("User", {
-      pattern = "VeryLazy",
-      once = true,
-      callback = function()
-        vim.schedule(function()
-          -- Free up <leader>gL for diffview-plus's current-line history.
-          -- DiffviewFileHistory is in diffview's cmd list, so pressing the key
-          -- before diffview loads still triggers lazy-loading via cmd interception.
-          pcall(vim.keymap.del, "n", "<leader>gL")
-          vim.keymap.set(
-            "n",
-            "<leader>gL",
-            "<cmd>.DiffviewFileHistory --follow<cr>",
-            { desc = "History: current line" }
-          )
-        end)
-      end,
-    })
-  end,
   opts = {
     -- Disable snacks smooth-scroll animation: it animates the two scroll
     -- targets from <C-d>zz / <C-u>zz separately, landing the cursor off-center
@@ -36,14 +12,21 @@ return {
     picker = {
       sources = {
         -- 1. Fixes the default file finder (<leader><leader>)
+        -- `exclude` is required alongside these flags: snacks' files/explorer
+        -- sources ship no default exclude, so `hidden + ignored` also surfaces
+        -- .git internals and node_modules (measured here: 122 files -> 623, 107
+        -- of them under .git/). Showing dotfiles and .env is the intent; showing
+        -- object files is not.
         files = {
           hidden = true, -- Shows dotfiles
           ignored = true, -- Shows git-ignored files (e.g. .env files)
+          exclude = { ".git", "node_modules" },
         },
         -- 2. Fixes the tree explorer sidebar (<leader>e)
         explorer = {
           hidden = true, -- Shows dotfiles in the tree sidebar
           ignored = true, -- Shows git-ignored files in the tree sidebar
+          exclude = { ".git", "node_modules" },
         },
       },
     },

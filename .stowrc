@@ -1,11 +1,25 @@
 --target=~/.config
-# README.md, .gitignore and .gitmodules are NOT listed: stow's built-in ignore
-# list already skips them (plus LICENSE, .git, *~ and friends), and a CLI
-# --ignore is additive rather than replacing, so repeating them did nothing.
+# HAZARD: stow does NOT strip comments from this file. get_config_file_options()
+# in bin/stow runs shellwords() over every line and pushes the result straight
+# into the option list, so a word here that begins with a dash becomes a real
+# option. A comment reading "the ignore flag is additive" once cost this file a
+# silent, literal ignore rule for the word "is". Prose is fine; a leading dash
+# anywhere in it is not. Verify any edit with:
+#   stow -n -v --target=/tmp/somewhere .
+#
+# README.md, .gitignore and .gitmodules are NOT listed below: stow's built-in
+# ignore list already skips them (plus LICENSE, .git, *~ and friends), and the
+# ignore flag is additive rather than replacing, so repeating them did nothing.
 # Trap: that built-in list only applies while the package has no
-# .stow-local-ignore. Adding one REPLACES the built-in list wholesale — at which
+# .stow-local-ignore. Adding one REPLACES the built-in list wholesale, at which
 # point .git, LICENSE, *~ etc. would suddenly start being stowed. If a
 # .stow-local-ignore is ever introduced here, it must re-state those defaults.
+#
+# zsh, terminfo, herdr and macos are excluded here and installed by hand in
+# install.common.sh / install.sh (different targets, or a real directory is
+# required). There is no bin package: nothing needs to live in ~/.local/bin
+# anymore — gitlab.com auth for `go get` is ~/.netrc, refreshed by the untracked
+# `opread go` (see cheatsheet.md).
 --ignore=install.*\.sh
 --ignore=cheatsheet\.md
 --ignore=check\.sh
@@ -15,4 +29,3 @@
 --ignore=terminfo
 --ignore=herdr
 --ignore=macos
---ignore=bin

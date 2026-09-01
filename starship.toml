@@ -19,7 +19,10 @@ command_timeout = 2000
 scan_timeout = 100
 
 [character]
+# Same glyph either way — only the colour carries the success/failure signal.
+# (The stock error_symbol is a different glyph, ❯, which changed the shape too.)
 success_symbol = '[➜](bold green)'
+error_symbol = '[➜](bold red)'
 
 [git_branch]
 format =  '[$symbol$branch(:$remote_branch)]($style)'
@@ -30,10 +33,12 @@ style = 'bold blue'
 symbol = " "
 
 [golang]
-format = '[ ](bold cyan)'
-
-[docker_context]
-disabled = true
+# Symbol only, no $version. Kept as $symbol/$style rather than a literal glyph
+# and inline colour so both stay live and the palette below applies
+# (`teal` is Catppuccin Mocha's ANSI cyan, so this renders as it did before).
+format = '[$symbol]($style)'
+symbol = ' '
+style = 'bold teal'
 
 [palettes.catppuccin_mocha]
 rosewater = "#f5e0dc"

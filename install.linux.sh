@@ -203,9 +203,12 @@ pkg_name() { # map a tool to this PM's package name (differences are the excepti
     ffmpeg)      case "$PM" in dnf) echo "ffmpeg-free" ;; *) echo "ffmpeg" ;; esac ;;
     # ncurses-bin supplies tic, used to compile terminfo/ below. ncurses-term is
     # the second half and just as load-bearing: it carries the tmux-256color
-    # entry that tmux.conf sets as default-terminal, and without it everything
-    # started inside tmux fails its terminal lookup — nvim greets you with
-    # "E558: Terminal entry not found in terminfo". Only apt splits the two.
+    # entry. tmux.conf does NOT set that — it says so explicitly at the top —
+    # because tmux >= 3.1 already defaults default-terminal to tmux-256color on
+    # its own, which is precisely why the entry has to exist: nothing in this
+    # repo would name a different one. Without it everything started inside tmux
+    # fails its terminal lookup and nvim greets you with "E558: Terminal entry
+    # not found in terminfo". Only apt splits the two.
     ncurses)     case "$PM" in apt) echo "ncurses-bin ncurses-term" ;; *) echo "ncurses" ;; esac ;;
     *)           echo "$1" ;;
   esac
@@ -262,8 +265,18 @@ case "$PM" in
     # Failure on Fedora (no epel-release package) is expected and ignored.
     # Failure on RHEL/Rocky/Alma means EPEL-only tools (stow, fzf, bat, fd,
     # ripgrep, zoxide, atuin) won't be found in any repo — warn visibly.
+    #
+    # The guard has to be the DISTRO, not $PM. This arm is `dnf)`, so the old
+    # `[ "$PM" = dnf ]` was tautologically true and every single Fedora run
+    # printed a "!! EPEL setup failed" banner for the outcome the comment three
+    # lines up calls expected and ignorable — training the reader to skip the one
+    # warning that actually matters on RHEL. Matched as a whole line (and with
+    # optional quotes, since os-release permits ID="fedora" and the RHEL-likes
+    # do quote theirs) so ID_LIKE=fedora on Rocky/Alma/CentOS — where EPEL is
+    # exactly what we need and its absence IS the problem — still warns.
     $SUDO dnf install -y epel-release >>"$LOG" 2>&1 </dev/null \
-      || { [ "$PM" = dnf ] && echo "!! EPEL setup failed — EPEL packages may not install (see $LOG)" >&2; true; } ;;
+      || { grep -Eq '^ID="?fedora"?$' /etc/os-release 2>/dev/null \
+           || echo "!! EPEL setup failed — EPEL packages may not install (see $LOG)" >&2; } ;;
   *)      : ;;  # pacman refreshes implicitly on install
 esac
 
@@ -394,9 +407,14 @@ gh_release_install() {
 
   # Parsed with grep rather than jq: jq is itself one of the tools this may be
   # asked to install, so it cannot be a dependency of the installer.
+  # `|| urls=""` for the same pipefail reason as CURRENT_SHELL in step 5: grep
+  # exits 1 on no match, pipefail hands that to the assignment, and the next line
+  # — which exists precisely to handle "no assets" — would never be reached. It
+  # survives today only because every caller invokes gh_release_install inside an
+  # `&&` list, which suspends errexit; that is luck, not design.
   urls="$(printf '%s' "$body" \
           | grep -o '"browser_download_url": *"[^"]*"' \
-          | sed 's/.*"\(https[^"]*\)"/\1/')"
+          | sed 's/.*"\(https[^"]*\)"/\1/')" || urls=""
   [ -n "$urls" ] || return 1
 
   # Drop distro packages, installers, checksums and signatures — we want the
@@ -433,7 +451,9 @@ gh_release_install() {
   # anywhere contains "gnu" as a bare word for some projects, so `_pick gnu` came
   # back empty and control fell straight through to the catch-all — which is how
   # zoxide's aarch64-linux-android asset got picked on ARM.
-  url="$(_pick 'unknown-linux-gnu')"
+  # Only the first needs `|| url=""` — the rest are already in `||` position, and
+  # _pick is a pipeline of greps whose "no match" is exit 1 (see urls above).
+  url="$(_pick 'unknown-linux-gnu')" || url=""
   [ -n "$url" ] || url="$(_pick 'gnu')"
   [ -n "$url" ] || url="$(_pick 'unknown-linux-musl')"
   [ -n "$url" ] || url="$(_pick '.')"
@@ -449,10 +469,13 @@ gh_release_install() {
     if printf '%s\n' "$urls" | grep -Fxq "$c"; then sums_url="$c"; break; fi
   done
   if [ -z "$sums_url" ]; then
+    # "no checksum manifest" is the COMMON case here (herdr, sesh), and it is
+    # spelled `grep` exit 1 — so without `|| sums_url=""` pipefail makes the
+    # normal path the failing path.
     sums_url="$(printf '%s\n' "$urls" \
       | grep -Ei '(checksums?|sha256sums?|sha256\.sum)[^/]*$' \
       | grep -Eiv '\.(sig|asc|pem)$' \
-      | head -1)"
+      | head -1)" || sums_url=""
   fi
 
   tmp="$(mktemp -d)" || return 1
@@ -529,17 +552,39 @@ gh_release_install() {
     # so lifting just the executable out of the tarball produces an nvim that
     # starts and then fails on everything builtin. Keep the extracted tree whole
     # under ~/.local/opt and put a symlink on PATH.
-    f="$(find "$tmp" -type f -path '*/bin/nvim' -print -quit 2>/dev/null)"
+    f="$(find "$tmp" -type f -path '*/bin/nvim' -print -quit 2>/dev/null)" || f=""
     if [ -n "$f" ]; then
       root="$(dirname "$(dirname "$f")")"
       mkdir -p "$HOME/.local/opt"
-      rm -rf "$HOME/.local/opt/nvim"
       # cp+rm instead of mv: mv fails with EXDEV when /tmp and $HOME are on
       # different filesystems (tmpfs /tmp + separate /home volume). Under set -e
       # that aborts the whole script; cp crosses filesystem boundaries safely.
-      cp -r "$root" "$HOME/.local/opt/nvim" && rm -rf "$root"
-      ln -sfn "$HOME/.local/opt/nvim/bin/nvim" "$HOME/.local/bin/nvim"
-      rc=0
+      #
+      # Stage into nvim.new and swap, rather than rm -rf'ing the live tree first.
+      # The old order destroyed the working editor BEFORE it knew the replacement
+      # would land, then set rc=0 and symlinked unconditionally — so a cp that ran
+      # out of space (exactly the separate-/home-volume setup this cp exists for)
+      # left no nvim, a dangling ~/.local/bin/nvim, and a reported success. Both
+      # paths are under $HOME/.local/opt, so the mv is same-filesystem: no EXDEV,
+      # and the window in which nvim does not exist is one rename long.
+      #
+      # rc is set only by the full chain completing; the else arm removes the
+      # staging tree so a retry doesn't inherit a half-copy.
+      # A leftover nvim.new from an interrupted run must go first: `cp -r src dst`
+      # copies INTO dst when dst is an existing directory, which would nest the
+      # tree one level deeper and make bin/nvim unreachable at the expected path.
+      rm -rf "$HOME/.local/opt/nvim.new"
+      if cp -r "$root" "$HOME/.local/opt/nvim.new" \
+         && rm -rf "$HOME/.local/opt/nvim" \
+         && mv "$HOME/.local/opt/nvim.new" "$HOME/.local/opt/nvim" \
+         && ln -sfn "$HOME/.local/opt/nvim/bin/nvim" "$HOME/.local/bin/nvim"
+      then
+        rc=0
+        rm -rf "$root"
+      else
+        echo "!! neovim: could not install into $HOME/.local/opt (out of space?)" >&2
+        rm -rf "$HOME/.local/opt/nvim.new"
+      fi
     fi
   else
     rc=0
@@ -589,7 +634,10 @@ tool_version() {
   bin="$(bin_name "$1")"
   command -v "$bin" >/dev/null 2>&1 || return 1
   out="$("$bin" --version 2>/dev/null | head -1)" || return 1
-  out="$(printf '%s\n' "$out" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)"
+  # `|| out=""`: a --version line carrying no dotted number makes grep exit 1, and
+  # pipefail would turn "unparseable version" into a script-killing error instead
+  # of the `return 1` the next line intends (tool_ok treats that as "don't block").
+  out="$(printf '%s\n' "$out" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)" || out=""
   [ -n "$out" ] || return 1
   printf '%s\n' "$out"
 }
@@ -656,6 +704,13 @@ install_tool() {
     else
       echo "✗ $(tool_version "$tool" || echo 'installed version') is older than the required $floor"
       MISSING+=("$tool")
+      # FAILED_PKGS, not just MISSING, because this is the one failure mode
+      # verify_install cannot see for itself: the binary IS present, so have_tool
+      # says yes and the tool loop prints nothing. MISSING[] is only ever printed
+      # (see the manual-install list below), never folded into an exit status —
+      # so without this a Debian box whose nvim is too old for nvim/lazy-lock.json
+      # reached "✓ all checks passed", exit 0, and the login-shell switch.
+      FAILED_PKGS+=" $tool"
     fi
     return 0
   fi
@@ -674,6 +729,17 @@ install_tool() {
     echo "✓ $(gh_release_repo "$tool") (GitHub release → ~/.local/bin)"
   else
     echo "✗ not available"
+    # Deliberately MISSING only, no FAILED_PKGS. Every tool that reaches this arm
+    # is already visible to verify_install under the right severity: the
+    # load-bearing ones (zsh, stow, neovim, herdr, jq, …) are in its fatal binary
+    # loop, and the optional ones (ffmpeg/sevenzip/poppler/imagemagick, shellcheck)
+    # are in its warn-only loops on purpose. Forcing them all into FAILED_PKGS
+    # would make them uniformly fatal and break a documented-good outcome: Fedora
+    # cannot install sevenzip without RPM Fusion (see pkg_name), so every Fedora
+    # run — which the header records as passing end-to-end — would start reporting
+    # INCOMPLETE and refusing to switch the login shell over a yazi archive
+    # preview. The two failures verify_install genuinely cannot see are ghostty
+    # and the Nerd Font, and those append to FAILED_PKGS at their own steps below.
     MISSING+=("$tool")
   fi
 }
@@ -733,8 +799,12 @@ if ! command -v mise >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/mise" ]; then
   # mise publishes single-binary releases on GitHub (jdx/mise), but the distro
   # packages cover Arch and the fallback path here handles the rest; converting
   # to gh_release_install would require adding mise to gh_release_repo() and
-  # gh_release_bins(). For now the install is tracked in UNVERIFIED[].
-  UNVERIFIED+=("mise — installed via curl https://mise.run | sh (no checksum; use GH_TOKEN env or convert to gh_release_install to verify)")
+  # gh_release_bins(). For now the install is tracked in UNVERIFIED[] — pushed
+  # inside the success branch below, not here. It used to be recorded before the
+  # curl ran, so a failed download produced a closing report that said "✗ mise"
+  # and "installed WITHOUT checksum verification: mise" at the same time. The
+  # UNVERIFIED list is a statement about what is now on PATH; nothing that failed
+  # to install belongs in it.
   if curl -fsSL https://mise.run | sh >>"$LOG" 2>&1; then
     # Rebuilt element by element, because the old MISSING=("${MISSING[@]/mise}")
     # did NOT remove anything: ${arr[@]/pat} is a substitution, so it replaced
@@ -748,6 +818,7 @@ if ! command -v mise >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/mise" ]; then
     done
     MISSING=(${_kept[@]+"${_kept[@]}"})
     unset _kept _m
+    UNVERIFIED+=("mise — installed via curl https://mise.run | sh (no checksum; convert to gh_release_install to verify)")
     echo "   ✓ mise (mise.run → ~/.local/bin)"
   else
     echo "   ✗ mise — see $LOG"
@@ -768,7 +839,15 @@ ZSH_PATH=""
 CURRENT_SHELL=""
 if command -v zsh >/dev/null 2>&1; then
   ZSH_PATH="$(command -v zsh)"
-  CURRENT_SHELL="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)"
+  # `|| CURRENT_SHELL=""` is load-bearing, and its absence was fatal. This is a
+  # simple command whose status is the substitution's, and `pipefail` makes that
+  # the pipeline's — so it inherits getent's: 2 when the key is not in NSS, 127
+  # when getent isn't installed at all. Under `set -e` the script then died right
+  # here, at step 5 — AFTER the whole package loop and BEFORE the stow step. A
+  # container with a UID that maps to no passwd entry therefore installed ~30
+  # tools and stowed nothing, which is the one outcome this script exists to
+  # avoid. Empty is already handled: everything below reads ${CURRENT_SHELL:-unknown}.
+  CURRENT_SHELL="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)" || CURRENT_SHELL=""
   if [ "$CURRENT_SHELL" = "$ZSH_PATH" ]; then
     echo "==> Login shell already zsh"
     ZSH_PATH=""   # nothing for step 10 to do
@@ -798,6 +877,14 @@ fi
 if command -v ghostty >/dev/null 2>&1; then
   echo "   ✓ ghostty"
 else
+  # verify_install has no check of its own for ghostty — the binary is in none of
+  # its tool loops, and ~/.config/ghostty/config being a repo symlink says nothing
+  # about whether a terminal exists to read it. So this ✗ was the only trace of the
+  # failure anywhere, the run still finished "✓ all checks passed" / exit 0, and
+  # INSTALL_RC=0 let step 10 switch the login shell. Record it where the exit
+  # status is computed. (install.sh has recorded its ghostty cask failure this way
+  # all along; this is the Linux half catching up.)
+  FAILED_PKGS+=" ghostty"
   echo "   ✗ ghostty — no direct package for $PM. Options:"
   case "$PM" in
     apt)    echo "       • community .deb: https://github.com/mkasberg/ghostty-ubuntu" ;;
@@ -835,9 +922,15 @@ elif command -v curl >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1; then
     echo "   ✓ installed to $_fontdir"
   else
     rm -f "$_fontdir/JetBrainsMono.zip"
+    # A font has no binary for verify_install to look for — this is the exact case
+    # install.sh:128 documents on the macOS side, where an absent nerd font still
+    # ended in "✓ all checks passed" while the prompt, tmux status line and yazi UI
+    # were full of tofu. Same accounting here.
+    FAILED_PKGS+=" font-jetbrains-mono-nerd-font"
     echo "   ✗ download failed — see $LOG"
   fi
 else
+  FAILED_PKGS+=" font-jetbrains-mono-nerd-font"
   echo "   ✗ need curl + unzip to fetch the font"
 fi
 
@@ -870,6 +963,12 @@ hint() {
     # (0.42+); Ubuntu 22.04's 0.29 makes every fzf call in the shell fail.
     fzf)       echo "REQUIRED >= 0.48 by .zshrc's 'fzf --zsh' — GitHub releases: junegunn/fzf" ;;
     zsh)       echo "REQUIRED — none of these dotfiles load without it" ;;
+    # The one tool whose absence makes this entire script pointless — no stow, no
+    # symlinks, nothing in ~/.config comes from the repo — and it had no case here,
+    # so it fell through to a bare "install manually". It is also the likeliest
+    # entry in this list on a RHEL-like: stow is EPEL-only there (see the EPEL step
+    # at the top), so a box where epel-release failed lands exactly here.
+    stow)      echo "REQUIRED — nothing is symlinked without it. RHEL/Rocky/Alma: sudo dnf install epel-release && sudo dnf install stow" ;;
     mise)      echo "curl https://mise.run | sh" ;;
     sevenzip)  echo "yazi archive previews only" ;;
     poppler)   echo "yazi PDF previews only" ;;
@@ -962,7 +1061,11 @@ if [ -n "$ZSH_PATH" ] && [ "$INSTALL_RC" -eq 0 ]; then
   echo ""
   if [ -t 0 ]; then
     printf '==> Change login shell from %s to %s? [Y/n] ' "${CURRENT_SHELL:-unknown}" "$ZSH_PATH"
-    read -r _reply
+    # `|| _reply=n` — read exits non-zero on EOF, and as a bare simple command
+    # under `set -e` that killed the script with status 1 at the very last step of
+    # an otherwise perfect install. Ctrl-D at this prompt is a plain "no", not an
+    # error: treat it as declining the shell change and let the script exit 0.
+    read -r _reply || _reply=n
     case "${_reply:-y}" in
       [Nn]*) echo "   skipped — run 'chsh -s $ZSH_PATH' when ready" ;;
       *)     chsh -s "$ZSH_PATH" && echo "   ✓ login shell set (takes effect on next login)" \

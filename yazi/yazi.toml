@@ -1,3 +1,5 @@
 [mgr]
+# The only deviation from yazi's defaults. show_symlink was also set here, but
+# the installed yazi's embedded yazi-default.toml has `show_symlink = true`
+# already (and `show_hidden = false`), so it was a no-op and is gone.
 show_hidden = true
-show_symlink = true
