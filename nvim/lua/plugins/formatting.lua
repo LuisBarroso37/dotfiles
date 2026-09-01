@@ -30,6 +30,26 @@ local PRETTIER_CONFIGS = {
   "prettier.config.cts",
 }
 
+-- vim.fs.root above only matches those exact filenames, but prettier also
+-- reads config from a "prettier" key inside package.json (e.g.
+-- `"prettier": "@daikin/prettier-config"`, a shared-config reference) — a repo
+-- using only that form has no file matching PRETTIER_CONFIGS, so the gate
+-- below fell through and prettier never ran. This walks up for a package.json
+-- and parses it to check for that key, without treating every package.json
+-- (most JS repos have one) as an implicit prettier config.
+local function package_json_has_prettier_key(filename)
+  local pkg = vim.fs.find("package.json", { path = vim.fs.dirname(filename), upward = true })[1]
+  if not pkg then
+    return false
+  end
+  local ok, content = pcall(vim.fn.readfile, pkg)
+  if not ok then
+    return false
+  end
+  local decoded_ok, decoded = pcall(vim.json.decode, table.concat(content, "\n"))
+  return decoded_ok and type(decoded) == "table" and decoded.prettier ~= nil
+end
+
 return {
   {
     "stevearc/conform.nvim",
@@ -62,7 +82,10 @@ return {
           -- prettier config is resolvable, so these rules don't leak prettier into
           -- non-JS projects that merely happen to contain a .json/.yaml/.md file.
           condition = function(_, ctx)
-            return ctx.filename ~= nil and ctx.filename ~= "" and vim.fs.root(ctx.filename, PRETTIER_CONFIGS) ~= nil
+            if ctx.filename == nil or ctx.filename == "" then
+              return false
+            end
+            return vim.fs.root(ctx.filename, PRETTIER_CONFIGS) ~= nil or package_json_has_prettier_key(ctx.filename)
           end,
         },
       },

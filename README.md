@@ -14,35 +14,33 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [Starship](https://starship.rs) | `.config/starship.toml` | Shell prompt |
 | [Atuin](https://atuin.sh) | `.config/atuin/config.toml` | Shell history search |
 | [lazygit](https://github.com/jesseduffield/lazygit) | `.config/lazygit/config.yml` | Terminal git UI |
-| [yazi](https://github.com/sxyazi/yazi) | `.config/yazi/` | Terminal file manager (`y` cd's into last dir on exit) |
+| [yazi](https://github.com/sxyazi/yazi) | `.config/yazi/` | Terminal file manager |
 | [delta](https://github.com/dandavison/delta) | `.config/git/config` | Syntax-highlighting git diff pager |
-| [gh](https://cli.github.com) | — | GitHub CLI (PRs, issues, auth from the terminal) |
+| [gh](https://cli.github.com) | — | GitHub CLI |
 | [zoxide](https://github.com/ajeetdsouza/zoxide) | — | Smarter `cd` |
 | [bat](https://github.com/sharkdp/bat) | — | Better `cat` |
 | [fzf](https://github.com/junegunn/fzf) | — | Fuzzy finder |
 | [fd](https://github.com/sharkdp/fd) | — | Better `find` |
 | [ripgrep](https://github.com/BurntSushi/ripgrep) | — | Better `grep` |
 | [carapace](https://carapace.sh) | — | Multi-shell completion engine |
-| [mise](https://mise.jdx.dev) | `~/.config/mise/config.toml` (untracked) | Runtime version manager (node, go, java, …) |
-| [herdr](https://herdr.dev) | `.config/herdr/config.toml` | Agent workspace multiplexer (owns `Ctrl+a`; drives `wth`/`wthr`) |
-| [jq](https://jqlang.github.io/jq/) | — | JSON processor — **required** by the `wth`/`wthr` worktree helpers |
-| [karabiner-elements](https://karabiner-elements.pqrs.org) | `macos/karabiner/karabiner.json` | **macOS only** — keyboard remapping (caps lock → escape/ctrl, etc.) |
-| [rectangle](https://rectangleapp.com) | `macos/rectangle/RectangleConfig.json` | **macOS only** — window manager (snap windows to halves, corners, etc.) |
+| [mise](https://mise.jdx.dev) | `~/.config/mise/config.toml` (untracked) | Runtime version manager |
+| [herdr](https://herdr.dev) | `.config/herdr/config.toml` | Agent workspace multiplexer |
+| [jq](https://jqlang.github.io/jq/) | — | JSON processor — required by `wth`/`wthr` |
+| [karabiner-elements](https://karabiner-elements.pqrs.org) | `macos/karabiner/karabiner.json` | macOS only — keyboard remapping |
+| [rectangle](https://rectangleapp.com) | `macos/rectangle/RectangleConfig.json` | macOS only — window manager |
 
 ---
 
 ## Key idea
 
-The problem with dotfiles is that tools expect their configs at fixed paths (e.g. `~/.config/nvim/`), but you want those files tracked in a git repo.
-
-The solution is [GNU Stow](https://www.gnu.org/software/stow/) — a symlink manager. Your real config files live inside `~/dotfiles/`, and Stow creates symlinks at the locations tools expect, pointing back into the repo:
+Tools expect their configs at fixed paths (e.g. `~/.config/nvim/`), but you want those files tracked in a git repo. [GNU Stow](https://www.gnu.org/software/stow/) — a symlink manager — bridges the two: your real files live in `~/dotfiles/`, and Stow symlinks them into place:
 
 ```
 ~/dotfiles/nvim/   ──►  ~/.config/nvim/   (symlink)
 ~/dotfiles/tmux/   ──►  ~/.config/tmux/   (symlink)
 ```
 
-You edit files at the paths you already know (`~/.config/nvim/`, etc.) — they just happen to be symlinks. Git sees the real files inside `~/dotfiles/`, so you commit and push changes like any other repo. **Stow is the only required tool that isn't a terminal utility** — everything else is optional depending on what you use.
+You edit files at the paths tools already expect — they just happen to be symlinks. Git sees the real files inside `~/dotfiles/`.
 
 ---
 
@@ -56,7 +54,7 @@ git clone https://github.com/<your-username>/dotfiles.git ~/dotfiles
 
 ### 2. Run the install script
 
-**macOS** (Homebrew):
+**macOS**:
 
 ```sh
 cd ~/dotfiles
@@ -64,26 +62,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-**Linux** — `pacman`, `apt` or `dnf`, covering:
-
-| Package manager | Distros | Verified against |
-| --- | --- | --- |
-| `pacman` | Arch, Manjaro, EndeavourOS, CachyOS | `archlinux:latest` + real hardware |
-| `apt` | Debian, Ubuntu, Mint, Pop!\_OS | `debian:trixie` |
-| `dnf` | Fedora, RHEL, Rocky, AlmaLinux | `fedora:latest` |
-
-Each ran end-to-end as a non-root sudo user in a clean container and finished
-with every check passing. The derivatives are inferred from sharing the parent's
-package manager — only the named image was tested — and a container exercises no
-GUI, so Ghostty and the Nerd Font are confirmed to install but not to render.
-
-**64-bit only** — x86_64 and aarch64. A 32-bit userland (`armv7l`/`armhf`) gets no
-GitHub-release fallback at all, and eight of the tools are in no apt repo, herdr
-among them — which `.zshrc` hard-depends on. 64-bit Raspberry Pi OS is Debian and
-takes the `apt` path unchanged; the 32-bit image is not supported.
-
-openSUSE (`zypper`), Void (`xbps`) and Alpine (`apk`) are not supported — see the
-header of `install.linux.sh` for why, and what adding one back would take.
+**Linux** (`pacman`, `apt`, or `dnf` — Arch/Manjaro/CachyOS, Debian/Ubuntu/Mint, Fedora/RHEL/Rocky; 64-bit only):
 
 ```sh
 cd ~/dotfiles
@@ -91,88 +70,50 @@ chmod +x install.linux.sh
 ./install.linux.sh      # NOT with sudo — it escalates on its own
 ```
 
-It installs each tool from the distro's repos, falling through to the AUR on
-Arch and then to upstream GitHub releases (into `~/.local/bin`) for anything the
-repos don't carry — so Debian and Fedora get a complete install too, despite
-packaging neither `sesh`, `carapace`, `herdr` nor `yazi`. Whatever it still
-can't find is **reported** with a copy-paste recipe rather than pretended.
-
-It also installs the JetBrainsMono Nerd Font, makes `zsh` your login shell, and
-finishes with a verification pass over every binary and symlink. Ghostty is the
-one piece that can still need a manual step — it's a GUI app with no portable
-binary, so on Debian/Fedora the script prints the .deb / COPR / snap options.
-
-Both scripts will:
-- Install all tools listed above (via `brew` on macOS, the native PM on Linux)
-- Install **GNU Stow** — required to create the symlinks
-- Use Stow to symlink all configs to their correct locations
-- Install [mise](https://mise.jdx.dev) (the runtime version manager) — but **no
-  language runtimes**; a fresh clone is language-free (see "Machine-specific
-  shell config" below)
-- Initialise the catppuccin-tmux submodule and clone TPM (tmux plugin manager)
-- Create an empty `~/.config/sesh.local.toml` (sesh errors on a missing import)
-- Install the `gh-poi` extension, which `wtr`/`wthr` point you at for branch cleanup
-- Verify the result — every binary present, every config path resolving into the
-  repo — instead of just reporting on the package step
-
-Everything after the package step — submodules, stow, the herdr/terminfo
-hand-wiring, TPM, the sesh import file, and a final verification pass — is shared
-between the two and lives in **`install.common.sh`**, which both source. Only the
-platform-specific half (package manager, GUI apps, login shell) is per-script.
-
-Both also source an optional, untracked `install.local.sh` if you place one next
-to them — put per-machine toolchains there (embedded SDKs, JDKs, client tooling),
-so the tracked scripts stay portable.
+Both scripts install every tool above, install Stow and symlink all configs,
+install mise (with no language runtimes pinned — a fresh clone is
+language-free), set up tmux/sesh plugin machinery, and finish with a
+verification pass. Shared post-install steps live in `install.common.sh`,
+sourced by both. An optional untracked `install.local.sh` next to them can
+hold per-machine toolchains.
 
 ### 3. Restart your terminal
 
-All configs will be in place and your shell, editor, and tools will pick them up automatically.
-
 ### 4. Recreate your git identity
 
-Nothing in this repo creates `~/.gitconfig`, so on a fresh machine the first
-`git commit` fails with *"Author identity unknown"*. And `~/.gitconfig`
-**overrides** the tracked `.config/git/config`, so this split can't live in the
-repo — it has to be written by hand on every new machine.
-
-Both files are untracked: `~/.gitconfig` carries the work identity as the
-default, and `~/.gitconfig-personal` is included for the personal repos only, so
-commits there aren't authored by your work address.
+`~/.gitconfig` is untracked (it overrides the tracked `.config/git/config`) and
+isn't created by this repo, so write it by hand. Give it your default
+identity, then add an `includeIf` per directory that needs a different one
+(e.g. work repos under a folder that isn't this one) — bundle a different SSH
+key into the same override with `core.sshCommand`:
 
 ```sh
 cat > ~/.gitconfig <<'EOF'
 [user]
-	email = you@work.example
-	name = Your Work Name
+	name = Your Name
+	email = you@example.com
 
-[includeIf "gitdir:~/dotfiles/"]
-	path = ~/.gitconfig-personal
-[includeIf "gitdir:~/.claude/skills/"]
-	path = ~/.gitconfig-personal
+[includeIf "gitdir:~/work-projects/"]
+	path = ~/.gitconfig-work
 EOF
 
-cat > ~/.gitconfig-personal <<'EOF'
+cat > ~/.gitconfig-work <<'EOF'
 [user]
-	name = LuisBarroso37
-	email = 58770446+LuisBarroso37@users.noreply.github.com
+	name = Your Work Name
+	email = you@work.example
+
+[core]
+	sshCommand = ssh -i ~/.ssh/id_ed25519_work -o IdentitiesOnly=yes
 EOF
 ```
 
 ### 5. Set up private-registry tokens (optional)
 
-Only needed if you use `npm`, `terraform`, or `go` against a private,
-token-gated registry. This repo doesn't ship any tokens or name any vault —
-that lives in an untracked `opread` shell function you write into
-`~/.zshrc.local` (see [cheatsheet.md](cheatsheet.md#gitlab-tokens-opread) for a
-worked example), pulling from whatever secrets manager you use. It fetches
-credentials **on demand** rather than at shell startup, since most terminals
-never touch these registries and shouldn't pay the unlock cost of one that does.
-
-npm and Terraform take an environment variable (`~/.npmrc` and `TF_TOKEN_<host>`
-respectively — neither ever needs the token written to disk). Go is the
-exception: its own HTTP client authenticates the module-discovery request with
-`~/.netrc`, whose format holds only a literal password, so there's no reference
-to export — the on-demand function has to (re)write that file instead.
+Only needed for `npm`, `terraform`, or `go` against a private, token-gated
+registry. This repo ships no tokens or vault names — that lives in an
+untracked `opread` shell function in `~/.zshrc.local` (worked example in
+[cheatsheet.md](cheatsheet.md#gitlab-tokens-opread)), fetched on demand rather
+than at shell startup.
 
 ---
 
@@ -183,86 +124,67 @@ cd ~/dotfiles
 git pull && ./install.sh      # or ./install.linux.sh
 ```
 
-Re-running the install script *is* the update path — every step is idempotent,
-so it's safe on a machine that's already set up. Don't stop at `git pull`:
-config changes regularly come with a package step, and a pull-only machine ends
-up with dead shell functions (`wth`/`wthr` need `jq` and `herdr`) or silently
-missing behaviour (yazi's preview backends).
+Re-running the install script *is* the update path — every step is
+idempotent. Don't stop at `git pull`: config changes regularly come with a
+package step.
 
 ---
 
 ## How Stow works in practice
 
-Each tool has its own subdirectory at the root of this repo, containing its config files directly. A `.stowrc` sets the stow target to `~/.config`, so running `stow .` creates a directory-level symlink in `~/.config/` for each package:
+Each tool has its own subdirectory at the repo root; `.stowrc` sets the stow
+target to `~/.config`, so `stow .` creates a directory-level symlink per
+package:
 
 ```
 dotfiles/
-  nvim/          →  ~/.config/nvim  (symlink to ~/dotfiles/nvim/)
-    init.lua
-    lua/
-  tmux/          →  ~/.config/tmux  (symlink to ~/dotfiles/tmux/)
-    tmux.conf
+  nvim/          →  ~/.config/nvim  (symlink)
+  tmux/          →  ~/.config/tmux  (symlink)
   starship.toml  →  ~/.config/starship.toml
 ```
 
-The key: `stow .` treats the entire dotfiles directory as a single package. Each top-level folder gets folded into one symlink in `~/.config/`, rather than symlinking individual files. Files like `README.md`, `cheatsheet.md` and the `install*.sh` scripts are excluded via `.stowrc` ignore rules.
+`README.md`, `cheatsheet.md`, and the `install*.sh` scripts are excluded via
+`.stowrc` ignore rules.
 
-**Zsh is a special case** — its dotfiles (`.zshrc`, `.zprofile`, `.zshenv`) live directly in `~`, not `~/.config/`. The `zsh/` package is excluded from `stow .` and stowed separately with an explicit target:
+**Zsh is a special case** — its dotfiles live in `~`, not `~/.config/`, so
+it's stowed separately:
 
 ```sh
 stow .                     # all ~/.config packages
 stow --target="$HOME" zsh  # zsh dotfiles → ~
 ```
 
-**Three more packages are excluded from `stow .`**, because a symlink is the wrong
-shape for them:
+**Three more packages are excluded from `stow .`** because a symlink is the
+wrong shape for them:
 
-- `macos/` — neither of these targets `~/.config`, so `install.sh` wires both by
-  hand. `macos/karabiner/` is linked as a whole **directory** (Karabiner saves via
-  `rename(2)`, which would replace a file-level symlink with a regular file and
-  silently orphan the repo copy). `macos/rectangle/RectangleConfig.json` is
-  **copied**, not linked — Rectangle refuses a symlinked config as tampering, so
-  `install.sh` drops a copy in `~/Library/Application Support/Rectangle/` and
-  Rectangle imports it on next launch, behind a confirmation prompt. Consequence
-  worth knowing: this is the one config where edits made in the app's UI do *not*
-  flow back to the repo. Re-export from Rectangle's settings over the tracked file
-  when you change a shortcut; `check.sh` fails if the live domain has drifted.
-- `herdr/` — herdr writes runtime state (logs, sockets, `session.json`) into
-  `~/.config/herdr`, so that has to stay a real directory. `install.common.sh`
-  links only `config.toml` into it by hand. Left to stow, the whole restow aborts with
-  *"existing target is not owned by stow"* and **no other package gets restowed
-  either**.
-- `terminfo/` — terminfo sources are *compiled* into `~/.terminfo` with `tic`,
-  not symlinked. `install.common.sh` does that. It carries an `xterm-256color` variant
-  with `Smulx`/`Setulc` so Neovim emits undercurl (red squiggles on LSP
-  diagnostics) inside herdr panes, which force `TERM=xterm-256color`; `.zshrc`
-  switches `TERM` to it when it detects a herdr pane. Inside tmux the equivalent
-  fix is `set-option -ga terminal-features ',*:RGB:usstyle'` in `tmux.conf` —
-  copy the whole value, the same line carries the true-colour capability.
+- `macos/` — `install.sh` wires both by hand: `karabiner/` as a whole
+  directory (Karabiner's `rename(2)` save would orphan a file-level symlink),
+  `rectangle/RectangleConfig.json` as a copy (Rectangle refuses a symlinked
+  config). Rectangle edits made in-app don't flow back to the repo —
+  re-export over the tracked file when you change a shortcut.
+- `herdr/` — writes runtime state into `~/.config/herdr`, so it must stay a
+  real directory; `install.common.sh` links only `config.toml` into it.
+- `terminfo/` — compiled into `~/.terminfo` with `tic`, not symlinked; carries
+  an `xterm-256color` variant for undercurl support inside herdr panes.
 
-**Machine-specific shell config** — anything you *don't* want on every machine (the Angular CLI, Docker hosts, embedded toolchains, SDKMAN, and any runtime not managed by mise) lives in `~/.zshrc.local`, which the tracked `.zshrc` sources at the very end if it exists:
+**Machine-specific config** lives in `~/.zshrc.local` (untracked, sourced last
+by `.zshrc`) — put anything you don't want on every machine there (embedded
+toolchains, Docker hosts, SDKMAN). **Language runtimes** follow the same
+split via [mise](https://mise.jdx.dev): the tracked `.zshrc` only activates
+mise; actual versions live in an untracked `~/.config/mise/config.toml`:
 
 ```sh
-[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"
+mise use -g node@lts go@latest java@corretto-25
 ```
 
-`~/.zshrc.local` is **not** tracked by this repo — it sits in `~`, outside `~/dotfiles/`, so git never sees it. That keeps the committed config portable: a fresh machine gets only the cross-machine tooling and starts clean. Recreate `~/.zshrc.local` per machine with just the toolchains that machine actually needs (it's sourced last, so tools like SDKMAN that must initialise at the end of `.zshrc` still work).
-
-**Language runtimes** follow the same portability split, via [mise](https://mise.jdx.dev). The tracked `.zshrc` only *activates* mise (`eval "$(mise activate zsh)"`); the actual language versions live in an **untracked** `~/.config/mise/config.toml`, chosen per machine:
-
-```sh
-mise use -g node@lts go@latest java@corretto-25   # writes ~/.config/mise/config.toml
-```
-
-So a fresh clone starts **language-free** — no Node, Go, or Java is pinned by the repo. (Rust is the exception: it stays on rustup, and `.zshrc` just sources `~/.cargo/env` if present.)
-
-**Neovim is tuned for JS/TS/web.** The language-specific pieces (`vtsls`, the ESLint LSP, `prettier` via conform) are intentionally kept, but every one **self-gates** — prettier only runs when a prettier config file resolves from the buffer upward, and the ESLint LSP only attaches in a project it can find a config for — so on a Rust/Go/etc. machine they're inert no-ops, not breakage.
-
-Anything shaped by **one** codebase (LSP heap sizes, format timeouts, per-repo lint autocmds) lives in that repo's own `.nvim.lua`, loaded via `vim.o.exrc`, not here.
+**Neovim is tuned for JS/TS/web** (`vtsls`, ESLint LSP, `prettier` via
+conform), but each piece self-gates on the project actually having a config
+for it, so it's inert on non-JS machines. Anything shaped by one codebase
+(LSP heap sizes, per-repo lint autocmds) belongs in that repo's own
+`.nvim.lua`, loaded via `vim.o.exrc`.
 
 To add a new tool to the repo:
 
-1. Create its folder: `mkdir ~/dotfiles/<tool>/`
-2. Move the config there: `mv ~/.config/<tool>/ ~/dotfiles/<tool>/`
-3. Restow: `cd ~/dotfiles && stow .`
-
+1. `mkdir ~/dotfiles/<tool>/`
+2. `mv ~/.config/<tool>/ ~/dotfiles/<tool>/`
+3. `cd ~/dotfiles && stow .`
