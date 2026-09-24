@@ -276,8 +276,23 @@ run_shared_tail() {
   else
     echo "   ✓ already present"
   fi
-  # Install plugins on a fresh machine, including the theme. This also migrates
-  # existing machines away from the former tracked Catppuccin submodule.
+  # Older clones had Catppuccin at this same path as a Git submodule. TPM sees
+  # the directory as "already installed" and would never honor the new release
+  # pin. Only remove a clean submodule belonging to this repo; preserve local
+  # edits and unknown directories for manual review.
+  local catpath="$HOME/.config/tmux/plugins/tmux" cat_status
+  if [ -f "$catpath/.git" ]; then
+    cat_status="$(git -C "$catpath" status --porcelain 2>/dev/null)" || cat_status=unknown
+    if [ "$(readlink -f "$catpath" 2>/dev/null)" = "$DOTFILES/tmux/plugins/tmux" ] \
+       && [ -z "$cat_status" ]; then
+      rm -rf "$catpath"
+      echo "   ↳ removed clean, retired Catppuccin submodule for TPM to reinstall"
+    else
+      echo "   ! old Catppuccin submodule has local changes or is not from this repo; migrate it manually" >&2
+      rc=1
+    fi
+  fi
+  # Install plugins on a fresh machine, including the theme.
   if [ -x "$HOME/.config/tmux/plugins/tpm/bin/install_plugins" ]; then
     "$HOME/.config/tmux/plugins/tpm/bin/install_plugins" \
       || { echo "   ! TPM could not install all plugins (offline?)" >&2; rc=1; }
