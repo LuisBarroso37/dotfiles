@@ -9,9 +9,9 @@ unset _brew
 
 # PATH entries live here, next to brew's, not in .zshrc. .zshrc runs for
 # *interactive* shells only, so these were established purely as a side effect of
-# opening a prompt: `zsh script.sh` got nothing, and neither did anything else
-# whose ancestry never went through an interactive shell. Setting them once per
-# login shell and exporting them means every child inherits them.
+# opening a prompt. Setting them once per login shell and exporting them means
+# its child processes inherit them. A standalone non-login `zsh script.sh` does
+# not read .zprofile; use a login shell if it needs these toolchain directories.
 #
 # Ordering note: mise is activated from .zshrc, i.e. *after* this file, so mise's
 # entries are prepended on top of everything below and win — which is what we
