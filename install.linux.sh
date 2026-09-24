@@ -13,7 +13,7 @@ set -euo pipefail
 # was pointed out that a 32-bit userland (armv7l/armhf) gets no GitHub-release
 # fallback whatsoever: gh_release_install returns 1 for every arch that isn't
 # x86_64 or aarch64, and eight of the tools below are in no apt repo at all —
-# herdr among them, which .zshrc hard-depends on. 64-bit Raspberry Pi OS is
+# herdr among them. 64-bit Raspberry Pi OS is
 # Debian and takes the apt path unchanged; the 32-bit image is not supported.
 #
 # Each was run end-to-end as a non-root sudo user in a clean container of the
@@ -48,7 +48,7 @@ set -euo pipefail
 #   4. mise (runtime version manager) comes from the repo when packaged and from
 #      its own installer otherwise; language runtimes are then chosen per machine
 #      with `mise use -g` (see .zshrc).
-#   5. The tail (submodules, stow, TPM, sesh file, verification) is shared with
+#   5. The tail (stow, TPM, sesh file, verification) is shared with
 #      install.sh — it lives in install.common.sh, sourced below.
 #
 # Re-running this script is safe: every step is idempotent.
@@ -356,6 +356,7 @@ gh_release_repo() {
     fd)        echo "sharkdp/fd" ;;
     jq)        echo "jqlang/jq" ;;
     gh)        echo "cli/cli" ;;
+    worktrunk) echo "max-sixty/worktrunk" ;;
     shellcheck) echo "koalaman/shellcheck" ;;
     neovim)    echo "neovim/neovim" ;;
     fzf)       echo "junegunn/fzf" ;;
@@ -490,7 +491,7 @@ gh_release_install() {
   # insist on it and refuse to install on a mismatch. Where it publishes none
   # (herdr, sesh) we install anyway but record it in $UNVERIFIED, which is
   # reported at the end — refusing outright would leave .zshrc's hard dependency
-  # on herdr unmet, which is a worse outcome than a warned-about download.
+  # without agent workspaces, which is worse than a warned-about download.
   if [ -z "$sums_url" ]; then
     UNVERIFIED+=("$tool — $repo publishes no checksum for $asset")
   elif ! command -v sha256sum >/dev/null 2>&1; then
@@ -745,7 +746,7 @@ install_tool() {
 }
 
 # ORDER MATTERS in the first line: git, curl and unzip are what the later entries
-# are installed WITH (submodules, TPM clone, the mise installer, and every archive
+# are installed WITH (TPM clone, the mise installer, and every archive
 # the GitHub-release fallback unpacks). unzip used to sit eight entries after yazi,
 # whose release asset is the only .zip in the set — so on a minimal image yazi's
 # download succeeded, the extraction found no unzip, its error went to /dev/null
@@ -754,8 +755,8 @@ install_tool() {
 # zsh is NOT optional and was the omission that made a fresh install look like it
 # had done nothing: every config here is zsh-side, so without it (and without the
 # chsh in step 10) you land back in bash and none of this is ever loaded.
-# jq and herdr are likewise load-bearing — .zshrc's wth/wthr/_herdr_ws_at pipe
-# `herdr workspace list` through jq.
+# Worktrunk is the shell's Git worktree manager (its binary is `wt`). Herdr and
+# jq are installed for agent workspaces and JSON queries, not shell helpers.
 # wl-clipboard and xclip are the Linux side of something macOS gets for free via
 # pbcopy, which is exactly why their absence went unnoticed: tmux-yank
 # (tmux.conf) and the yank-to-"+ keymaps (nvim/lua/config/keymaps.lua) both need
@@ -767,7 +768,7 @@ install_tool() {
 echo "==> Installing tools (best-effort; details in $LOG)"
 for tool in \
   git curl unzip zsh tmux stow neovim ripgrep fzf zoxide bat fd \
-  gh lazygit git-delta starship atuin yazi carapace sesh herdr \
+  gh lazygit git-delta starship atuin yazi carapace sesh herdr worktrunk \
   mise jq shellcheck ncurses fontconfig wl-clipboard xclip \
   ffmpeg sevenzip poppler imagemagick
 do
@@ -949,8 +950,9 @@ hint() {
     yazi)      echo "cargo install --force yazi-build   (or GitHub releases)" ;;
     sesh)      echo "mise use -g go@latest && go install github.com/joshmedeski/sesh/v2@latest" ;;
     carapace)  echo "GitHub releases: https://github.com/carapace-sh/carapace-bin/releases" ;;
-    herdr)     echo "REQUIRED by .zshrc's wth/wthr — https://github.com/herdrdev/herdr/releases" ;;
-    jq)        echo "REQUIRED by .zshrc's wth/wthr — GitHub releases: jqlang/jq" ;;
+    herdr)     echo "Herdr agent workspaces — https://github.com/herdrdev/herdr/releases" ;;
+    jq)        echo "JSON processor — GitHub releases: jqlang/jq" ;;
+    worktrunk) echo "Git worktrees — https://worktrunk.dev/" ;;
     lazygit)   echo "go install github.com/jesseduffield/lazygit@latest   (or GitHub releases)" ;;
     git-delta) echo "cargo install git-delta   (or GitHub releases: dandavison/delta)" ;;
     gh)        echo "GitHub's repo: https://github.com/cli/cli/blob/trunk/docs/install_linux.md" ;;

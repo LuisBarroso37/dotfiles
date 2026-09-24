@@ -32,7 +32,7 @@
 
 | Action | Key |
 |--------|-----|
-| Open session picker (sesh + fzf) | `Ctrl+b T` |
+| Open session picker (sesh) | `Ctrl+b T` |
 | Switch to last session | `Ctrl+b S` |
 | New session | `tmux new -s name` |
 | Detach | `Ctrl+b d` |
@@ -42,8 +42,8 @@
 > `Ctrl+b S`, not the stock `Ctrl+b L` — `L` is rebound to "resize pane right".
 > Worth having with one session per worktree and `detach-on-destroy off`.
 >
-> Outside tmux, `s` (a zsh function) opens the same sesh picker with plain fzf,
-> so it works before a tmux server exists.
+> Outside tmux, `s` opens sesh's built-in picker. It works before a tmux
+> server exists; inside tmux, `Ctrl+b T` opens it in a popup.
 
 ---
 
@@ -82,76 +82,43 @@ only format Go's discovery step actually honors.
 
 ---
 
-## Git worktrees (git + tmux + sesh)
+## Git worktrees (Worktrunk + sesh)
 
-> Worktrees are **nested directories** named `<parent>/<repo>/<branch-slug>` (e.g.
-> `into.care/portal/ICP-1234-desc`), where the slug is the branch with `/` → `-`.
-> Each gets a tmux session named `<repo>/<branch-slug>` (e.g.
-> `portal/ICP-1234-desc`) — slashes are safe because every `tmux -t` call uses the
-> `=` exact-match prefix. Managed by the `wtc` / `wtr` zsh functions over plain
-> `git worktree`; `wth` / `wthr` are the herdr-backed twins. `sesh` (`Ctrl+b T`)
-> is the picker for hopping between tmux sessions.
-
-### Mental model
-
-- The main clone (`portal`, `intocare`) is **itself a worktree**, pinned to a branch — keep it on `main` so new worktrees branch off the right base.
-- A branch can be checked out in **only one worktree at a time**.
-- `git worktree` **never changes your shell's cwd**, and `wtr` **refuses to delete the session you're in** — so the old drift/self-kill surprises can't happen.
-
-### Workflow
+Worktrunk owns worktree paths and safe branch removal; sesh owns tmux sessions.
+New worktrees live under `<main-checkout>/<repo>/<branch-slug>`, with a hash
+suffix when sanitizing would collide. Existing worktrees created with the old
+`wtc`/`wth` helpers still work: Worktrunk finds them from Git's worktree list.
 
 | Action | Command |
 |--------|---------|
-| Start a ticket (create worktree + enter its session) | `wtc ICP-1234-desc` — run from anywhere inside the repo |
-| Hop between worktrees | `Ctrl+b T` (sesh picker) → attach to its session |
-| List worktrees | `git worktree list` |
-| Rebase current branch onto latest main | `wtrebase` — fetches, rebases onto `origin/<main>` (auto-stashes), and fast-forwards the main worktree too if it's clean & on main |
-| Remove a worktree (+ session, + branch if merged) | `wtr ICP-1234-desc` — from your **main** session, not from inside it |
-| Remove the worktree you're standing in | leave it first, then name the branch: `wtr ICP-1234-desc` from another session — no-arg `wtr` resolves the branch from the **current** shell, so the cwd guard always refuses (`wthr` guards the same way) |
-| Bulk-delete branches whose PRs have merged | `gh poi` |
+| Create a branch and worktree | `wt switch -c ICP-1234-desc` (new branches start from the default branch; `--base @` starts from your current HEAD) |
+| Switch to a branch with a worktree | `wt switch ICP-1234-desc` or `wt switch` for the interactive picker |
+| Return to the default branch worktree | `wt switch ^` |
+| See worktrees and their changes | `wt list` |
+| Rebase on current default branch | `git fetch origin && git rebase --autostash origin/main` (substitute the actual default branch) |
+| Remove a worktree and, if fully integrated, its branch | `wt remove ICP-1234-desc --foreground` |
+| Discard a dirty worktree | `wt remove ICP-1234-desc --force --foreground` (branch deletion has a separate `-D` force flag) |
+| Open/attach a tmux session in the current worktree | `sesh connect "$PWD"` |
+| Switch tmux sessions | `s` outside tmux, `Ctrl+b T` inside it |
 
-- ✅ `wtc` drops you straight into the new worktree's session (switches client if already in tmux, attaches if not).
-- ✅ `wtr` from your base (`main`) session; it kills the session and deletes the branch with a safe `git branch -d`. Squash/rebase-merged branches have no ancestry to check, so `-d` refuses them and `wtr` keeps them — run `gh poi` to sweep those up.
-- ✅ **`gh poi`** ([seachicken/gh-poi](https://github.com/seachicken/gh-poi), `gh extension install seachicken/gh-poi`) is the branch cleanup. It asks the **GitHub API** whether each branch's PR merged, so squash and rebase merges are detected definitively rather than guessed from "the upstream disappeared". It protects the default branch and anything with unpushed commits. `gh poi --dry-run` to preview.
-- ❌ `wtr` while standing inside the worktree/session you're deleting — it refuses, in tmux **and** outside it.
+`wt remove` checks whether **the current branch tip** adds anything to the
+default branch, including squash merges. It keeps unintegrated branches unless
+you explicitly use `-D`. Worktrunk does not close a tmux session for you: leave
+the session first and close it with `tmux kill-session -t '=repo/branch'` when
+you're done. tmux-resurrect saves periodically; if you remove a session between
+saves, save again with `Ctrl+b Ctrl+s` so it does not reappear on restart.
 
-### herdr variants
+To open a worktree in herdr, first `wt switch <branch>` in your shell, then use
+herdr's workspace picker (`Ctrl+a w`) or create a workspace from that directory.
+Herdr's own worktree UI may use a different path convention; avoid managing
+the same checkout's lifecycle with both tools at once. Do not close a herdr
+repo-parent workspace just to tidy up — it also closes linked workspaces.
 
-`wth` / `wthr` mirror `wtc` / `wtr` against herdr workspaces instead of tmux
-sessions, using the same path convention. Both require `jq`. `--force` discards
-a dirty checkout and works on either side (`wtr --force`, `wthr --force`).
-
-herdr's own prefix is `Ctrl+a` (tmux deliberately yields it — see the top of
-this file):
-
-| Action | Key |
-|--------|-----|
-| Workspace picker | `Ctrl+a w` |
-| Previous / next workspace | `Ctrl+a w` (navigate mode), then bare `k` / `j` |
-| Move pane focus up / down | `Ctrl+a w` (navigate mode), then `Ctrl+k` / `Ctrl+j` |
-| Previous / next agent | `Ctrl+a Alt+k` / `Ctrl+a Alt+j` |
-
-> Don't close a repo-parent workspace to tidy up — it cascades and closes every
-> linked-worktree workspace under it.
-
-### Daily workflow (from opening Ghostty)
-
-> **Mental model:** `sesh` / `Ctrl+b T` = pick a main clone + hop between anything · `wtc` = start/enter a ticket worktree · `wtr` = tear one down · `wtrebase` = stay on top of main. Sessions do auto-restore across reboots (see the note at the end), but these commands rebuild any of them deterministically.
-
-1. **Open Ghostty** → plain shell, no tmux yet. Jump into a project with **`s`** (the zsh function — `Ctrl+b T` is a tmux binding and needs an attached client, so it does nothing here) → pick `portal` / `intocare` / `dotfiles` (or `sesh connect portal`). This starts tmux fresh and drops you in that repo's main-clone session. Keep main clones on `main`.
-2. **Start a ticket** — from anywhere inside the repo: `wtc ICP-1234-desc`. Creates (or reuses) the worktree and drops you into its `<repo>/ICP-1234-desc` session.
-3. **Hop around** — `Ctrl+b T` anytime to switch sessions; `Ctrl+b d` to detach (session keeps running).
-4. **Stay current** — from inside a ticket session: `wtrebase` (rebase onto `origin/main`, auto-stash, fast-forward main clone too).
-5. **Finish a ticket** — once merged, from a **different** session (e.g. your main clone, not from inside the worktree): `wtr ICP-1234-desc`. Removes worktree + session, deletes the branch only if merged.
-
-> **Session resurrection is ON.** `tmux-continuum` auto-saves every 15 min and
-> `@continuum-restore 'on'` (see `tmux/tmux.conf`) reopens the last save when the
-> tmux server starts fresh. Manual controls: save `Ctrl+b Ctrl+s`, restore
-> `Ctrl+b Ctrl+r`.
->
-> A session torn down by `wtr` does **not** come back: `wtr` re-runs resurrect's
-> `save.sh` after killing it, so the snapshot no longer lists a session pointing
-> at a deleted directory.
+**From Ghostty:** `s` picks a repo and starts/attaches tmux; `wt switch -c
+ICP-1234-desc` creates a ticket worktree; `sesh connect "$PWD"` gives it a tmux
+session. Use `wt switch` for Git navigation and `Ctrl+b T` to hop between
+already-running terminal sessions. `tmux-continuum` saves and restores sessions
+across restarts (`Ctrl+b Ctrl+s` to save, `Ctrl+b Ctrl+r` to restore).
 
 ---
 

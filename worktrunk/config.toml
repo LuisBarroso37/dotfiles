@@ -1,0 +1,10 @@
+# Keep new worktrees under the primary checkout, as with the former shell
+# helpers. The hash suffix distinguishes branches that sanitize to the same
+# slug (e.g. fix/a and fix-a). Existing worktrees remain discoverable by wt.
+worktree-path = "{{ repo_path }}/{{ repo }}/{{ branch | sanitize_hash }}"
+
+# Without this, `git add -A` from the main checkout would stage its nested
+# worktree directory as an untracked gitlink. info/exclude is local to this
+# clone, so it cannot accidentally change the project's committed .gitignore.
+[pre-start]
+ignore-nested = "exclude=\"$(git rev-parse --path-format=absolute --git-common-dir)/info/exclude\"; pattern=$(printf '/%s/' {{ repo }}); grep -qxF \"$pattern\" \"$exclude\" 2>/dev/null || printf '%s\\n' \"$pattern\" >> \"$exclude\""

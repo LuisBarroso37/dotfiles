@@ -90,6 +90,7 @@ tool_bins() {
     neovim)       echo "nvim" ;;
     ripgrep)      echo "rg" ;;
     git-delta)    echo "delta" ;;
+    worktrunk)    echo "wt" ;;
     sevenzip)     echo "7zz 7z" ;;
     poppler)      echo "pdftoppm" ;;
     imagemagick)  echo "magick convert" ;;
@@ -188,7 +189,7 @@ p
   return 1
 }
 
-# Everything from submodules to the sesh import file: identical on both platforms
+# Everything from Stow to the sesh import file: identical on both platforms
 # because it only touches this repo and $HOME.
 #
 # Returns non-zero if a step that verify_install can also see went wrong (stow),
@@ -197,23 +198,7 @@ p
 run_shared_tail() {
   local rc=0
   echo ""
-  echo "==> Initialising submodules"
   cd "$DOTFILES" || return 1
-  if [ -e "$DOTFILES/.git" ]; then
-    # Warn, don't die. This is the first of two network fetches in this function
-    # and it was the only unguarded one: on a captive portal or an offline machine
-    # it exits non-zero, and `set -e` then killed the run before stow, terminfo,
-    # TPM, sesh.local.toml, gh-poi and verify_install — the exact half-applied
-    # install this file's design is meant to prevent. An absent .git, a missing
-    # tic and a failing cask were all already tolerated with a warning; there was
-    # no reason for a fetch to be the one fatal step. All it costs is the
-    # catppuccin/tmux theme, and verification still reports the real state.
-    git submodule update --init --recursive \
-      || echo "   ! submodule fetch failed (offline?) — catppuccin/tmux theme will be absent"
-  else
-    echo "   ! not a git clone — skipping (catppuccin/tmux theme will be absent)"
-  fi
-
   # Stow BEFORE cloning TPM: this makes ~/.config/tmux a symlink into the repo, so
   # the TPM clone below lands at $DOTFILES/tmux/plugins/tpm (gitignored). Cloning
   # first would create a real ~/.config/tmux directory and conflict on tmux.
@@ -223,7 +208,10 @@ run_shared_tail() {
   # first conflict stow could not resolve.
   echo "==> Stowing dotfiles"
   mkdir -p "$HOME/.config"      # stow aborts if --target from .stowrc doesn't exist
-  stow_with_backup "$HOME/.config" . || rc=1   # nvim, tmux, sesh, ghostty, starship, atuin, git, lazygit, yazi
+  # Worktrunk writes approvals beside config.toml: don't fold that directory
+  # into the tracked repo when stowing a fresh home.
+  mkdir -p "$HOME/.config/worktrunk"
+  stow_with_backup "$HOME/.config" . || rc=1
   stow_with_backup "$HOME" zsh || rc=1         # zsh dotfiles live in ~, not ~/.config
   # There is deliberately no bin/ package. gitlab.com HTTPS auth for `go get` on
   # private modules is ~/.netrc, refreshed on demand by the `opread go` zsh
@@ -281,15 +269,18 @@ run_shared_tail() {
 
   echo "==> Installing TPM (tmux plugin manager)"
   if [ ! -d "$HOME/.config/tmux/plugins/tpm" ]; then
-    # The second network fetch, and non-fatal for the same reason as the submodule
-    # one above: offline, this used to abort the run before sesh.local.toml, gh-poi
-    # and verification ever happened. No warning needed beyond git's own output —
-    # verify_install already checks for the tpm directory and reports a ✗, which is
-    # what makes the exit status right without this step being fatal.
+    # An offline fetch must not abort the run before verification. Git prints
+    # the failure and verify_install checks for the TPM directory.
     git clone https://github.com/tmux-plugins/tpm "$HOME/.config/tmux/plugins/tpm" \
       || echo "   ! TPM clone failed (offline?) — prefix+I will not work until it is installed"
   else
     echo "   ✓ already present"
+  fi
+  # Install plugins on a fresh machine, including the theme. This also migrates
+  # existing machines away from the former tracked Catppuccin submodule.
+  if [ -x "$HOME/.config/tmux/plugins/tpm/bin/install_plugins" ]; then
+    "$HOME/.config/tmux/plugins/tpm/bin/install_plugins" \
+      || { echo "   ! TPM could not install all plugins (offline?)" >&2; rc=1; }
   fi
 
   # sesh/sesh.toml imports a machine-specific session file; sesh errors if the
@@ -297,21 +288,6 @@ run_shared_tail() {
   # client project sessions here — it stays untracked, outside the dotfiles repo.
   echo "==> Ensuring machine-specific sesh session file exists"
   [ -f "$HOME/.config/sesh.local.toml" ] || touch "$HOME/.config/sesh.local.toml"
-
-  # gh poi is the branch-cleanup step that .zshrc's wtr/wthr point you at after a
-  # squash-merge, so the extension has to exist for that advice to work. Needs an
-  # authenticated gh, hence the reminder in the closing message.
-  echo "==> Installing the gh-poi extension (branch cleanup)"
-  if ! command -v gh >/dev/null 2>&1; then
-    echo "   ✗ gh not installed — skipping"
-  elif gh extension list 2>/dev/null | grep -q 'seachicken/gh-poi'; then
-    echo "   ✓ already installed"
-  elif gh extension install seachicken/gh-poi >/dev/null 2>&1; then
-    echo "   ✓ seachicken/gh-poi"
-  else
-    echo "   ! could not install (needs 'gh auth login' first) — run:"
-    echo "     gh extension install seachicken/gh-poi"
-  fi
 
   return "$rc"
 }
@@ -324,7 +300,7 @@ verify_install() {
   local _fail=0 tool pkg l real
 
   for tool in zsh tmux stow neovim ripgrep fzf zoxide bat fd gh lazygit \
-              git-delta starship atuin yazi carapace sesh herdr mise jq; do
+              git-delta starship atuin yazi carapace sesh herdr worktrunk mise jq; do
     have_tool "$tool" || { echo "   ✗ missing binary: $(bin_name "$tool") ($tool)"; _fail=1; }
   done
 
@@ -344,8 +320,8 @@ verify_install() {
   # It was absent from both loops, which is how a run could satisfy "all checks
   # passed" and then have check.sh skip C8 for a tool the install was supposed to
   # provide. git and curl are deliberately NOT listed: nothing here could have run
-  # without curl (Homebrew's installer, every release download) or git (submodules,
-  # the TPM clone), so a check for them can only ever pass.
+  # without curl (Homebrew's installer, every release download) or git (the
+  # TPM clone), so a check for them can only ever pass.
   have_tool shellcheck || echo "   ! shellcheck missing (lints these install scripts; check.sh C8)"
 
   # Packages the package step could not install. Every package step in both
@@ -376,7 +352,8 @@ verify_install() {
            "$HOME/.config/sesh/sesh.toml" "$HOME/.config/starship.toml" \
            "$HOME/.config/atuin/config.toml" "$HOME/.config/git/config" \
            "$HOME/.config/lazygit/config.yml" "$HOME/.config/yazi/theme.toml" \
-           "$HOME/.config/ghostty/config" "$HOME/.config/herdr/config.toml"; do
+           "$HOME/.config/ghostty/config" "$HOME/.config/herdr/config.toml" \
+           "$HOME/.config/worktrunk/config.toml"; do
     if [ -e "$l" ] && real="$(readlink -f "$l" 2>/dev/null)" \
        && case "$real" in "$DOTFILES"/*) true ;; *) false ;; esac; then
       continue
@@ -385,6 +362,8 @@ verify_install() {
   done
 
   [ -d "$HOME/.config/tmux/plugins/tpm" ] || { echo "   ✗ TPM not installed"; _fail=1; }
+  [ -f "$HOME/.config/tmux/plugins/tmux/catppuccin.tmux" ] \
+    || { echo "   ✗ Catppuccin tmux plugin missing (run prefix+I)"; _fail=1; }
   [ -f "$HOME/.config/sesh.local.toml" ]  || { echo "   ✗ sesh.local.toml missing"; _fail=1; }
   infocmp xterm-256color-undercurl >/dev/null 2>&1 \
     || echo "   ! terminfo entry xterm-256color-undercurl not compiled (undercurl only)"
@@ -441,9 +420,9 @@ print_next_steps() {
   for step in \
     ${NEXT_STEP_FIRST:+"$NEXT_STEP_FIRST"} \
     "Restart your terminal so the new shell config is loaded." \
-    "In tmux, press prefix+I to install plugins." \
+    "In tmux, press prefix+I to retry any plugins that failed to install." \
     "Set your git identity in ~/.gitconfig — see the git identity section in README.md." \
-    "Run 'gh auth login' so gh (and 'gh poi' branch cleanup) works." \
+    "Authenticate your forge CLI ('gh auth login' or 'glab auth login') for PR/MR lookup." \
     "Pick language runtimes: mise use -g node@lts java@corretto-25 go@latest"
   do
     printf '  %d. %s\n' "$n" "$step"

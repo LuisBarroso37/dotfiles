@@ -411,6 +411,12 @@ fi
 
 criterion "C3 — stow closure"
 
+if grep -Eqv '^(--target=|--ignore=|[[:space:]]*$)' .stowrc; then
+  fail ".stowrc contains non-option text (Stow parses prose such as '-n' as flags)"
+else
+  ok ".stowrc contains only target/ignore options"
+fi
+
 if ! command -v stow >/dev/null 2>&1; then
   fail "stow not installed"
 elif ! derived_or_fail "stow target (--target= in .stowrc)" "$STOW_TARGET"; then
@@ -678,21 +684,17 @@ fi
 # ---------------------------------------------------------------------------
 # C5 — Doc closure
 # ---------------------------------------------------------------------------
-# Mechanical half only: every worktree helper the docs name must exist. The full
-# both-directions doc audit is judgement work for a review session.
+# Mechanical half only: the documented worktree CLI must be installed and its
+# shell integration must be declared. The full docs audit is judgement work.
 
 criterion "C5 — doc closure (mechanical subset)"
 
-doc_missing=""
-for fn in $(grep -ohE '\bwt[a-z]{1,10}\b' README.md cheatsheet.md 2>/dev/null | sort -u); do
-  if ! grep -qE "^[[:space:]]*(function[[:space:]]+)?${fn}[[:space:]]*\(\)|^[[:space:]]*alias[[:space:]]+${fn}=" zsh/.zshrc; then
-    doc_missing="$doc_missing $fn"
-  fi
-done
-if [ -n "$doc_missing" ]; then
-  fail "documented but not defined in zsh/.zshrc:$doc_missing"
+if grep -q 'wt switch' cheatsheet.md \
+   && grep -q 'wt config shell init zsh' zsh/.zshrc \
+   && [ -f worktrunk/config.toml ]; then
+  ok "Worktrunk commands, config and zsh integration are documented"
 else
-  ok "every wt* helper named in the docs is defined"
+  fail "Worktrunk docs, config or zsh integration missing"
 fi
 
 # Prefix attribution. tmux and herdr both run here and own DIFFERENT prefixes —

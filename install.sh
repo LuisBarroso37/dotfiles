@@ -12,7 +12,7 @@ if [ "$(uname -s)" != "Darwin" ]; then
   exit 1
 fi
 
-# Everything after the package step (submodules, stow, herdr, terminfo, TPM,
+# Everything after the package step (stow, herdr, terminfo, TPM,
 # sesh file, verification) is identical on both platforms and lives here, run by
 # finish_install at the bottom. Sourced before anything touches $HOME: it runs
 # the refuse-to-run-as-root check at source time and derives $BACKUP from $HOME.
@@ -41,9 +41,7 @@ echo "==> Installing packages"
 # An array rather than one long `brew install` line, so the failure path below can
 # retry the formulae one at a time and name the one that broke.
 #
-# jq is NOT optional: zsh/.zshrc's _herdr_ws_at / wth / wthr parse `herdr
-# workspace list` through it. herdr likewise — the tracked .zshrc defines wth and
-# wthr against it, so a machine without the binary gets dead functions.
+# jq is useful for querying JSON output from CLIs such as herdr and Worktrunk.
 #
 # The last four are yazi's preview backends, previously left to install.local.sh
 # and therefore absent from every rebuild:
@@ -77,6 +75,7 @@ _formulae=(
   mise
   jq
   herdr
+  worktrunk
   shellcheck
   ffmpeg
   sevenzip

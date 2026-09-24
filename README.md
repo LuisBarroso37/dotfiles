@@ -9,6 +9,7 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [Neovim](https://neovim.io) + [LazyVim](https://lazyvim.org) | `.config/nvim/` | Editor |
 | [tmux](https://github.com/tmux/tmux) | `.config/tmux/tmux.conf` | Terminal multiplexer |
 | [sesh](https://github.com/joshmedeski/sesh) | `.config/sesh/sesh.toml` | tmux session manager |
+| [Worktrunk](https://worktrunk.dev) | `.config/worktrunk/config.toml` | Git worktree create/switch/remove |
 | [Ghostty](https://ghostty.org) | `.config/ghostty/` | Terminal emulator |
 | [Zsh](https://zsh.sourceforge.io) | `.zshrc`, `.zprofile`, `.zshenv` | Shell |
 | [Starship](https://starship.rs) | `.config/starship.toml` | Shell prompt |
@@ -25,7 +26,7 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [carapace](https://carapace.sh) | — | Multi-shell completion engine |
 | [mise](https://mise.jdx.dev) | `~/.config/mise/config.toml` (untracked) | Runtime version manager |
 | [herdr](https://herdr.dev) | `.config/herdr/config.toml` | Agent workspace multiplexer |
-| [jq](https://jqlang.github.io/jq/) | — | JSON processor — required by `wth`/`wthr` |
+| [jq](https://jqlang.github.io/jq/) | — | JSON processor |
 | [karabiner-elements](https://karabiner-elements.pqrs.org) | `macos/karabiner/karabiner.json` | macOS only — keyboard remapping |
 | [rectangle](https://rectangleapp.com) | `macos/rectangle/RectangleConfig.json` | macOS only — window manager |
 
@@ -124,9 +125,11 @@ cd ~/dotfiles
 git pull && ./install.sh      # or ./install.linux.sh
 ```
 
-Re-running the install script *is* the update path — every step is
-idempotent. Don't stop at `git pull`: config changes regularly come with a
-package step.
+Re-running the install script deploys updated configs and installs missing
+packages. On macOS, `brew install` does not upgrade already installed formulae:
+use `brew update && brew upgrade` for tool upgrades (and
+`brew upgrade --cask --greedy` to include self-updating casks). Check the
+result with `./check.sh`.
 
 ---
 
@@ -144,17 +147,20 @@ dotfiles/
 ```
 
 `README.md`, `cheatsheet.md`, and the `install*.sh` scripts are excluded via
-`.stowrc` ignore rules.
+`.stowrc` ignore rules. Keep `.stowrc` options-only: Stow parses prose in that
+file as CLI options, so even a comment showing `stow -n` can turn deployment
+into a dry run.
 
 **Zsh is a special case** — its dotfiles live in `~`, not `~/.config/`, so
 it's stowed separately:
 
 ```sh
+mkdir -p ~/.config/worktrunk # keep Worktrunk's runtime approvals outside the repo
 stow .                     # all ~/.config packages
 stow --target="$HOME" zsh  # zsh dotfiles → ~
 ```
 
-**Three more packages are excluded from `stow .`** because a symlink is the
+**Three packages are excluded from `stow .`** because a symlink is the
 wrong shape for them:
 
 - `macos/` — `install.sh` wires both by hand: `karabiner/` as a whole
@@ -166,6 +172,9 @@ wrong shape for them:
   real directory; `install.common.sh` links only `config.toml` into it.
 - `terminfo/` — compiled into `~/.terminfo` with `tic`, not symlinked; carries
   an `xterm-256color` variant for undercurl support inside herdr panes.
+
+`worktrunk/` **is stowed**, after the installer creates a real
+`~/.config/worktrunk/` directory. Its runtime approvals stay outside the repo.
 
 **Machine-specific config** lives in `~/.zshrc.local` (untracked, sourced last
 by `.zshrc`) — put anything you don't want on every machine there (embedded
@@ -182,6 +191,10 @@ conform), but each piece self-gates on the project actually having a config
 for it, so it's inert on non-JS machines. Anything shaped by one codebase
 (LSP heap sizes, per-repo lint autocmds) belongs in that repo's own
 `.nvim.lua`, loaded via `vim.o.exrc`.
+
+On macOS, the [sesh Raycast extension](https://www.raycast.com/joshmedeski/sesh)
+can switch to running tmux sessions from outside Ghostty. It uses the same
+sessions as the shell and tmux pickers; it needs a running tmux server.
 
 To add a new tool to the repo:
 

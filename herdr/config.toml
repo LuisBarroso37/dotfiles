@@ -9,7 +9,7 @@ onboarding = false
 # from the repo, not from a throwaway copy.
 
 [theme]
-# Almost certainly already the default — herdr 0.8.0's embedded default-config
+# Almost certainly already the default — herdr's embedded default-config
 # template ships `# name = "catppuccin"` commented out, the same convention it
 # uses for the other defaults (`# onboarding = true`, `# auto_switch = false`),
 # and "catppuccin" is the fallback string next to "unknown theme, falling back"
@@ -39,17 +39,7 @@ navigate_workspace_down = "j"
 navigate_pane_up = "ctrl+k"
 navigate_pane_down = "ctrl+j"
 
-# No [worktrees] directory here, deliberately.
-#
-# It was set to "~/.herdr/worktrees", which is (a) herdr's own default anyway and
-# (b) never consulted: wth/wthr always pass an explicit --path, placing worktrees
-# at <parent>/<repo>/<branch-slug>, i.e. *nested inside* the main checkout. That
-# nesting is what lets Neovim's 'exrc' find the repo's .nvim.lua from a worktree,
-# and it is what _wt_sync_excludes keys off to keep them out of `git status`.
-#
-# herdr's setting is a single fixed directory with no per-repo template, so it
-# cannot express "inside each repo's own checkout" — leaving it set only made it
-# look like the layout was configured here when it is not. A worktree created
-# from herdr's own UI (prefix+shift+g, the new_worktree action — prefix+n is
-# next_tab) still lands under the default and will miss both behaviours above;
-# use `wth <branch>` instead.
+# Git worktree creation and path choice now belong to Worktrunk. Herdr's own
+# worktree directory remains at its default for worktrees created from its UI;
+# use `wt switch` to create a checkout in the configured nested layout, then
+# open a herdr workspace in that checkout if desired.

@@ -1,4 +1,5 @@
 blacklist = ["scratch"]
+dir_length = 2 # nested worktrees display as <repo>/<branch> in the picker
 
 # Machine-specific sessions (work projects, client paths — anything that only
 # exists on one machine) live in an untracked ~/.config/sesh.local.toml, the same
