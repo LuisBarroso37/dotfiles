@@ -174,7 +174,7 @@ echo "   Using: $PM"
 # to ask a question would hang with no visible prompt. Fail fast on EOF instead.
 pm_install() { # install one or more packages; returns non-zero if the PM fails
   case "$PM" in
-    apt)    $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" </dev/null ;;
+    apt)    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" </dev/null ;;
     dnf)    $SUDO dnf install -y "$@" </dev/null ;;
     pacman) $SUDO pacman -S --needed --noconfirm "$@" </dev/null ;;
   esac
