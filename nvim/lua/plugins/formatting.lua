@@ -34,20 +34,21 @@ local PRETTIER_CONFIGS = {
 -- reads config from a "prettier" key inside package.json (e.g.
 -- `"prettier": "@daikin/prettier-config"`, a shared-config reference) — a repo
 -- using only that form has no file matching PRETTIER_CONFIGS, so the gate
--- below fell through and prettier never ran. This walks up for a package.json
--- and parses it to check for that key, without treating every package.json
--- (most JS repos have one) as an implicit prettier config.
+-- below fell through and prettier never ran. Walk through all ancestor
+-- package.json files: a nested package without a prettier key does not prevent
+-- Prettier from finding one in the monorepo root.
 local function package_json_has_prettier_key(filename)
-  local pkg = vim.fs.find("package.json", { path = vim.fs.dirname(filename), upward = true })[1]
-  if not pkg then
-    return false
+  local packages = vim.fs.find("package.json", { path = vim.fs.dirname(filename), upward = true, limit = math.huge })
+  for _, pkg in ipairs(packages) do
+    local ok, content = pcall(vim.fn.readfile, pkg)
+    if ok then
+      local decoded_ok, decoded = pcall(vim.json.decode, table.concat(content, "\n"))
+      if decoded_ok and type(decoded) == "table" and decoded.prettier ~= nil then
+        return true
+      end
+    end
   end
-  local ok, content = pcall(vim.fn.readfile, pkg)
-  if not ok then
-    return false
-  end
-  local decoded_ok, decoded = pcall(vim.json.decode, table.concat(content, "\n"))
-  return decoded_ok and type(decoded) == "table" and decoded.prettier ~= nil
+  return false
 end
 
 return {
