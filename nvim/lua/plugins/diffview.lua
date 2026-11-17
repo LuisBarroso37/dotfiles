@@ -1,5 +1,4 @@
--- diffview-plus.nvim: git review UI (file panel + side-by-side diffs), independent of
--- lazygit. Use lazygit for staging/committing; diffview for reviewing a branch.
+-- Use Diffview for review and lazygit for staging and commits.
 return {
   {
     "dlyongemallo/diffview-plus.nvim",
@@ -11,16 +10,10 @@ return {
       "DiffviewRefresh",
       "DiffviewFileHistory",
     },
-    -- <leader>gL (current-line history) conflicts with LazyVim's Snacks cwd git_log.
-    -- snacks.lua's init disables that mapping after VeryLazy; see that file.
-    -- All other keys are free: <leader>gr/gv/gV/gH/gA have no LazyVim defaults.
+    -- The conflicting <leader>gL mapping is overridden in config/keymaps.lua.
     keys = {
       {
-        -- Whole-branch diff vs the fork point with main: committed + staged +
-        -- unstaged TRACKED changes. Untracked/new files are NOT shown — git
-        -- can't diff them against a commit, and diffview refuses to on purpose
-        -- (see :h diffview; use <leader>gv for those). This is the pre-push /
-        -- PR review: it's exactly what your branch adds once committed.
+        -- Compare tracked changes against the main fork point. Use <leader>gv for untracked files.
         "<leader>gr",
         function()
           local base = vim.trim(vim.fn.system({ "git", "merge-base", "main", "HEAD" }))
@@ -35,12 +28,10 @@ return {
         end,
         desc = "Review branch vs main (tracked, incl. committed)",
       },
-      -- Working tree vs index: unstaged + staged + UNTRACKED new files. This is
-      -- the pre-commit review (the only view that shows untracked files).
+      -- Review uncommitted changes, including untracked files.
       { "<leader>gv", "<cmd>DiffviewOpen<cr>", desc = "Uncommitted changes (incl. untracked)" },
       { "<leader>gV", "<cmd>DiffviewClose<cr>", desc = "Diffview: close" },
-      -- History (git log -L style: shows the actual diff at each change).
-      -- --follow traces the file/line across renames.
+      -- Follow file history across renames.
       { "<leader>gH", "<cmd>DiffviewFileHistory --follow %<cr>", desc = "History: file (follow renames)" },
       {
         "<leader>gH",

@@ -16,35 +16,21 @@ vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
   spec = {
-    -- add LazyVim and import its plugins
     { "LazyVim/LazyVim", import = "lazyvim.plugins", opts = { colorscheme = "catppuccin-mocha" } },
-    -- Explorer setup: snacks explorer is the tree (<leader>e), mini.files the
-    -- manual picker (<leader>fm). Both extras are declared in lazyvim.json so
-    -- :LazyExtras reflects reality — importing one here instead bypassed
-    -- LazyVim's bookkeeping and showed mini-files as "not enabled".
-    -- No neo-tree disable is needed: it is not in LazyVim's core spec, only in
-    -- the (unenabled) lazyvim.plugins.extras.editor.neo-tree extra.
-    -- disable LazyVim's default colorscheme
+    -- Declare extras in lazyvim.json so :LazyExtras tracks them.
     { "folke/tokyonight.nvim", enabled = false },
-    -- No catppuccin spec is needed: LazyVim's colorscheme.lua already ships
-    -- { "catppuccin/nvim", lazy = true, name = "catppuccin", opts = { integrations… } },
-    -- and `colorscheme = "catppuccin-mocha"` above picks the flavour.
-    -- import/override with your plugins
     { import = "plugins" },
   },
   install = { colorscheme = { "catppuccin", "habamax" } },
   checker = {
-    enabled = true, -- check for plugin updates periodically
-    notify = false, -- suppress update notifications
-  }, -- automatically check for plugin updates
+    enabled = true,
+    notify = false,
+  },
   performance = {
     rtp = {
-      -- disable some rtp plugins
       disabled_plugins = {
         "gzip",
-        -- "matchit",
-        -- "matchparen",
-        "netrwPlugin",
+        "netrwPlugin", -- Keep the dashboard on `nvim .` instead of opening netrw.
         "tarPlugin",
         "tohtml",
         "tutor",
