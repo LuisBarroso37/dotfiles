@@ -55,10 +55,10 @@ return {
   {
     "stevearc/conform.nvim",
     opts = {
-      -- Prettier handles ALL formatting; conform runs it on save via LazyVim's
-      -- format-on-save. It resolves the workspace's own prettier binary (via
-      -- node_modules/.bin) and its config from the file upward, so it works in
-      -- monorepos. Linting/auto-fixing is the eslint LSP's job (plugins/eslint.lua).
+      -- Conform runs formatters on save via LazyVim's format-on-save. Prettier
+      -- resolves the workspace's binary via node_modules/.bin and its config
+      -- from the file upward, so it works in monorepos. Terraform uses terraform
+      -- fmt; linting/auto-fixing is the eslint LSP's job (plugins/eslint.lua).
       formatters_by_ft = {
         javascript = { "prettier" },
         typescript = { "prettier" },
@@ -72,6 +72,7 @@ return {
         scss = { "prettier" },
         yaml = { "prettier" },
         markdown = { "prettier" },
+        terraform = { "terraform_fmt" },
         -- NOTE: prettier only normalises json whitespace. The eslint LSP does not
         -- attach to json filetypes, so any eslint autofix a project wants on JSON
         -- (e.g. jsonc/sort-keys for i18n files) has to be its own autocmd in that

@@ -9,5 +9,8 @@ return {
     -- "Invalid 'col': out of range" after edits shorten a line. Recheck the
     -- installed runtime before enabling again (neovim/neovim#39772).
     inlay_hints = { enabled = false },
+    servers = {
+      terraformls = {},
+    },
   },
 }
