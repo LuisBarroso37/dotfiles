@@ -28,6 +28,13 @@ return {
           ignored = true, -- Shows git-ignored files in the tree sidebar
           exclude = { ".git", "node_modules" },
         },
+        -- 3. Grep pickers (<leader>/, <leader>sg, <leader>sG)
+        -- hidden only, not ignored: ignored would also surface build output
+        -- such as dist/, which holds stale copies of the source.
+        grep = {
+          hidden = true, -- Searches dotfiles (e.g. .env.test)
+          exclude = { ".git", "node_modules" },
+        },
       },
     },
   },
