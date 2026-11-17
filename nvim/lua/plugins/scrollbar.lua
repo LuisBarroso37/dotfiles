@@ -1,5 +1,6 @@
 return {
   "petertriho/nvim-scrollbar",
+  branch = "refactor/v2",
   event = "BufReadPost",
   -- catppuccin is a dependency because config() reads its palette. LazyVim declares
   -- catppuccin `lazy = true`, so nothing else guarantees it is loaded by BufReadPost —
@@ -10,18 +11,17 @@ return {
     -- instead of being a hardcoded hex. overlay0 is close to VS Code's scrollbar handle.
     local mocha = require("catppuccin.palettes").get_palette("mocha")
     require("scrollbar").setup({
-      handle = {
-        color = mocha.overlay0,
-        -- Default is 30; fully opaque so the handle stays visible over the marks.
-        blend = 0,
+      scrollbar = {
+        thumb = {
+          highlight = { bg = mocha.overlay0 },
+          blend = 0,
+        },
       },
-      handlers = {
-        -- Only non-default handler: gitsigns marks (added/changed/removed lines) are
-        -- off upstream because they need the gitsigns dependency, which we have.
-        -- cursor/diagnostic are on and search is off by default already.
+      providers = {
         gitsigns = true,
+        search = false,
+        marks = false,
       },
     })
-    require("scrollbar.handlers.gitsigns").setup()
   end,
 }
