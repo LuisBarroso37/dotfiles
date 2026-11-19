@@ -217,37 +217,6 @@ tools, run `brew update && brew upgrade`. To include casks that update
 themselves, run `brew upgrade --cask --greedy`. Then run
 `~/.local/share/chezmoi/check.sh` to check the result.
 
-## Dev containers
-
-A dev container is a Docker container that holds a project's tools. The
-[devcontainer CLI](https://github.com/devcontainers/cli) can install these
-dotfiles into any project's container. The project repo does not need to
-mention them. You keep the flags in your own shell:
-
-```sh
-alias dcup='npx -y @devcontainers/cli@0.90.0 up --workspace-folder . --docker-path podman \
-  --dotfiles-repository https://github.com/LuisBarroso37/dotfiles \
-  --dotfiles-target-path "~/.local/share/chezmoi" \
-  --dotfiles-install-command install.linux.sh'
-alias dcsh='npx -y @devcontainers/cli@0.90.0 exec --workspace-folder . --docker-path podman zsh -l'
-```
-
-Run `dcup` from a repo that has a `.devcontainer/` folder, then `dcsh` to open
-a shell inside the container. If you use Docker instead of Podman, remove
-`--docker-path podman`.
-
-- The CLI clones this repo from GitHub. Push your changes before you build a
-  new container, or the container gets the old version.
-- `--dotfiles-target-path` puts the clone where chezmoi expects it, so the
-  daily workflow commands also work inside the container. The quotes stop your
-  host shell from expanding `~`.
-- The CLI runs `install.linux.sh` once, when it creates the container. The
-  script skips ghostty and the Nerd Font in a container, because your host
-  terminal draws the text.
-- The login shell stays `bash`, so `dcsh` starts `zsh -l` itself.
-- The first `nvim` launch takes a few minutes while Mason installs the
-  language servers. The npm-based servers need Node.js in the container.
-
 ## Machine-specific configuration
 
 `~/.zshrc.local` is untracked, and `~/.zshrc` sources it last. Put anything
