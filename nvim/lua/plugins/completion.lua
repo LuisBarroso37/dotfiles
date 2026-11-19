@@ -35,10 +35,6 @@ return {
         -- these; vtsls has no combined key, and these two are its whole scope.
         vtsls = {
           settings = {
-            -- Not in vtsls' configuration schema (LazyVim sets it to true and
-            -- nothing reads it) — mirrored here only so a future vtsls that does
-            -- honour it doesn't silently re-enable the behaviour.
-            complete_function_calls = false,
             typescript = { suggest = { completeFunctionCalls = false } },
             javascript = { suggest = { completeFunctionCalls = false } },
           },
