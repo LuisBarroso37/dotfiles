@@ -610,24 +610,14 @@ if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then IN_CONTAINER=1; fi
 # ---------------------------------------------------------------------------
 # 2c. Minimum versions
 # ---------------------------------------------------------------------------
-# Some tools are packaged everywhere and still unusable, because this repo's
-# configs need a version newer than the distro's. Existence checks alone printed
-# a ✓ for those, they never reached $MISSING, and the "packaged version too old"
-# hint at the bottom of this script was therefore dead text nobody could trigger.
-#
-# A floor here means: below this version the tool does not merely lose a feature,
-# the configuration in this repo fails to load.
-#   neovim  nvim/lazy-lock.json pins LazyVim at a commit that requires 0.11.2.
-#           Debian 12 ships 0.7.2, Ubuntu 22.04 0.6.1, Debian 13 0.10.4 and even
-#           Ubuntu 24.04 only 0.9.5 — every one of them below the floor, so the
-#           editor config cannot be loaded at all.
-#   fzf     zsh/.zshrc sources `fzf --zsh`, which only exists from 0.48, and sets
-#           --color=selected-bg, which needs 0.42. Ubuntu 22.04 ships 0.29, where
-#           the `source <(fzf --zsh)` line makes EVERY fzf call fail.
+# Minimum versions required to load these configurations: LazyVim needs Neovim 0.11.2,
+# and .zshrc's fzf --zsh integration needs fzf 0.48. atuin/config.toml's daemon-fuzzy
+# with autostart needs 18.24.6 (older builds reject the key or hang on shell exit).
 min_version() {
   case "$1" in
     neovim) echo "0.11.2" ;;
     fzf)    echo "0.48.0" ;;
+    atuin)  echo "18.24.6" ;;
     *)      : ;;
   esac
 }
