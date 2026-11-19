@@ -1,0 +1,71 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "trellis/gpt-6.1-sol",
+  "share": "disabled",
+  "update": "notify",
+  "instructions": [
+    "~/.config/opencode/simple-english.md",
+    "~/.config/opencode/style-bridge.md",
+    "~/Desktop/Daikin/AGENTS.md"
+  ],
+  "agents": {
+    "general": {
+      "model": "trellis/gpt-6.1-sol"
+    },
+    "explore": {
+      "model": "trellis/gpt-6-luna"
+    },
+    "title": {
+      "model": "trellis/gpt-6-luna"
+    }
+  },
+  "permissions": [
+    { "action": "external_directory", "resource": "*", "effect": "allow" },
+    { "action": "shell", "resource": "*", "effect": "allow" },
+    { "action": "shell", "resource": "rm *", "effect": "ask" },
+    { "action": "shell", "resource": "rmdir *", "effect": "ask" },
+    { "action": "shell", "resource": "mv *", "effect": "ask" },
+    { "action": "shell", "resource": "sudo *", "effect": "ask" },
+    { "action": "shell", "resource": "chmod *", "effect": "ask" },
+    { "action": "shell", "resource": "chown *", "effect": "ask" },
+    { "action": "shell", "resource": "git clean*", "effect": "ask" },
+    { "action": "shell", "resource": "git reset*", "effect": "ask" },
+    { "action": "shell", "resource": "git restore*", "effect": "ask" },
+    { "action": "shell", "resource": "git checkout*", "effect": "ask" },
+    { "action": "shell", "resource": "git branch -D*", "effect": "ask" },
+    { "action": "shell", "resource": "git stash drop*", "effect": "ask" },
+    { "action": "shell", "resource": "git stash clear*", "effect": "ask" },
+    { "action": "shell", "resource": "git commit*", "effect": "ask" },
+    { "action": "shell", "resource": "git push*", "effect": "ask" },
+    { "action": "shell", "resource": "docker system prune*", "effect": "ask" },
+    { "action": "shell", "resource": "docker image prune*", "effect": "ask" },
+    { "action": "shell", "resource": "docker volume prune*", "effect": "ask" },
+    { "action": "shell", "resource": "kubectl delete*", "effect": "ask" },
+    { "action": "shell", "resource": "terraform destroy*", "effect": "ask" },
+    { "action": "shell", "resource": "terraform apply*", "effect": "ask" },
+    { "action": "shell", "resource": "npm publish*", "effect": "ask" }
+  ],
+  "mcp": {
+    "servers": {
+      "datadog": {
+        "type": "remote",
+        "url": "https://mcp.datadoghq.eu/v1/mcp?toolsets=core",
+        "disabled": true
+      },
+      "incident-io": {
+        "type": "remote",
+        "url": "https://mcp.incident.io/mcp",
+        "disabled": true
+      },
+      "trellis": {
+        "type": "remote",
+        "url": "https://build.trellis.inthepocket.net/api/mcp",
+        "disabled": true
+      }
+    }
+  },
+  "plugins": [
+    "@tarquinen/opencode-dcp@latest",
+    "@dietrichgebert/ponytail@latest"
+  ]
+}

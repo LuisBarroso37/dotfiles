@@ -1,0 +1,1 @@
+PONYTAIL AND SIMPLE ENGLISH TOGETHER. Ponytail decides what code you write. Simple English decides how you write the reply. The Ponytail end line (what you skipped or did not check, and any risk) is content, not a closer, so keep it. Write it as one or two plain sentences in the last paragraph, with no label, bold, or bullet. Skip it when nothing was skipped and no risk exists.

@@ -18,6 +18,7 @@ My personal dev environment: terminal, editor, shell, and CLI tools.
 | [yazi](https://github.com/sxyazi/yazi) | `.config/yazi/` | Terminal file manager |
 | [Git](https://git-scm.com) | `.gitconfig`, `.gitconfig-work`, `.config/git/config` | Identity and shared git settings |
 | [delta](https://github.com/dandavison/delta) | `.config/git/config` | Syntax-highlighting git diff pager |
+| [OpenCode](https://opencode.ai) | `.config/opencode/` | AI coding agent: configuration, instructions and the simple-english skill |
 | [gh](https://cli.github.com) | none | GitHub CLI |
 | [zoxide](https://github.com/ajeetdsouza/zoxide) | none | Smarter `cd` |
 | [bat](https://github.com/sharkdp/bat) | none | Better `cat` |
@@ -60,7 +61,9 @@ The repo root holds what chezmoi does not deploy:
 
 `home/.chezmoiignore` lists runtime files that tools write next to their
 configuration, for example herdr logs, Worktrunk approvals and the tmux plugins
-that TPM clones. chezmoi never adds or deploys these files.
+that TPM clones. chezmoi never adds or deploys these files. It also keeps the
+OpenCode service password, the generated Trellis plugin and the work-only
+skills out of the repo.
 
 `home/dot_gitconfig-work.tmpl` is a template. chezmoi fills in the work email
 from `~/.config/chezmoi/chezmoi.toml`, which `home/.chezmoi.toml.tmpl`

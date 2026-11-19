@@ -9,6 +9,20 @@
 .config/herdr/.plugins.lock
 .config/worktrunk/approvals.toml
 
+# OpenCode writes these itself. service.json holds the background service password.
+.config/opencode/service.json
+.config/opencode/backups
+.config/opencode/node_modules
+.config/opencode/package.json
+.config/opencode/package-lock.json
+.config/opencode/bun.lock
+.config/opencode/.gitignore
+# Trellis generates its plugin with an absolute path to its helper.
+.config/opencode/plugins
+# These skills carry client material, so they stay on the work machine only.
+.config/opencode/skills/create-mr
+.config/opencode/skills/show-your-work
+
 # TPM clones every tmux plugin here at install time.
 .config/tmux/plugins
 
