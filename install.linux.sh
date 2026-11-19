@@ -181,7 +181,7 @@ case "$PM" in
     $SUDO dnf install -y epel-release >>"$LOG" 2>&1 </dev/null \
       || { grep -Eq '^ID="?fedora"?$' /etc/os-release 2>/dev/null \
            || echo "!! EPEL setup failed — EPEL packages may not install (see $LOG)" >&2; } ;;
-  *)      : ;;  # pacman refreshes implicitly on install
+  *)      : ;;  # pacman: no refresh, since -Sy without -u is a partial upgrade
 esac
 
 # ---------------------------------------------------------------------------
