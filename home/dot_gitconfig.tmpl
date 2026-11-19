@@ -1,7 +1,8 @@
-
 [user]
 	name = LuisBarroso37
 	email = 58770446+LuisBarroso37@users.noreply.github.com
+{{- with get . "workDir" }}
 
-[includeIf "gitdir/i:~/Desktop/Daikin/"]
+[includeIf "gitdir/i:{{ . }}/"]
 	path = ~/.gitconfig-work
+{{- end }}

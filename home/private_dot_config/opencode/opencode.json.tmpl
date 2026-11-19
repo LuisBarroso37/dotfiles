@@ -5,8 +5,8 @@
   "update": "notify",
   "instructions": [
     "~/.config/opencode/simple-english.md",
-    "~/.config/opencode/style-bridge.md",
-    "~/Desktop/Daikin/AGENTS.md"
+    "~/.config/opencode/style-bridge.md"{{ with get . "workDir" }},
+    "{{ . }}/AGENTS.md"{{ end }}
   ],
   "agents": {
     "general": {

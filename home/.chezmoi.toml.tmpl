@@ -1,9 +1,12 @@
-{{- /* The work email stays out of this public repo. chezmoi init asks for it once and keeps it in ~/.config/chezmoi/chezmoi.toml. */ -}}
+{{- /* The work folder and email stay out of this public repo. chezmoi init asks for them once and keeps them in ~/.config/chezmoi/chezmoi.toml. */ -}}
+{{- $workDir := get . "workDir" | default "" -}}
 {{- $workEmail := get . "workEmail" | default "" -}}
 {{- if stdinIsATTY -}}
-{{-   $workEmail = promptStringOnce . "workEmail" "Work git email for ~/Desktop/Daikin (empty to skip)" -}}
+{{-   $workDir = promptStringOnce . "workDir" "Work folder whose repos use the work git identity, for example ~/work (empty to skip)" -}}
+{{-   $workEmail = promptStringOnce . "workEmail" "Work git email (empty to skip)" -}}
 {{- end -}}
 sourceDir = {{ .chezmoi.workingTree | quote }}
 
 [data]
+  workDir = {{ $workDir | trimSuffix "/" | quote }}
   workEmail = {{ $workEmail | quote }}

@@ -65,10 +65,12 @@ that TPM clones. chezmoi never adds or deploys these files. It also keeps the
 OpenCode service password, the generated Trellis plugin and the work-only
 skills out of the repo.
 
-`home/dot_gitconfig-work.tmpl` is a template. chezmoi fills in the work email
-from `~/.config/chezmoi/chezmoi.toml`, which `home/.chezmoi.toml.tmpl`
-creates at `chezmoi init`. `chezmoi re-add` skips templates, so change this
-file with `chezmoi edit ~/.gitconfig-work`.
+Files that end in `.tmpl` are templates: `home/dot_gitconfig.tmpl`,
+`home/dot_gitconfig-work.tmpl` and the OpenCode `opencode.json.tmpl`. chezmoi
+fills in the work folder and the work email from
+`~/.config/chezmoi/chezmoi.toml`, which `home/.chezmoi.toml.tmpl` creates at
+`chezmoi init`. `chezmoi re-add` skips templates, so change these files with
+`chezmoi edit`, for example `chezmoi edit ~/.gitconfig`.
 
 ## Daily workflow
 
@@ -173,16 +175,18 @@ untracked `install.local.sh` next to them can hold per-machine toolchains.
 ### 4. Git identity
 
 chezmoi deploys the git identity. `~/.gitconfig` holds the personal identity.
-For repos under `~/Desktop/Daikin/`, it includes `~/.gitconfig-work`, which
-sets the work identity and the work SSH key.
+For repos under your work folder, it includes `~/.gitconfig-work`, which sets
+the work identity and the work SSH key. OpenCode also reads `AGENTS.md` from
+the work folder.
 
-The work email stays out of this public repo. The install script runs
-`chezmoi init`, which asks for the work email once and saves it in
-`~/.config/chezmoi/chezmoi.toml`. If you leave the answer empty, chezmoi
-creates no `~/.gitconfig-work`. chezmoi asks only in a terminal, so a
-non-interactive install also gets no work file.
+The work folder and the work email stay out of this public repo. The install
+script runs `chezmoi init`, which asks for both once and saves them in
+`~/.config/chezmoi/chezmoi.toml`. If you leave the folder empty, chezmoi adds
+no work rule to `~/.gitconfig`. If you leave the email empty, chezmoi creates
+no `~/.gitconfig-work`. chezmoi asks only in a terminal, so a non-interactive
+install gets neither.
 
-To set or change the work email later, run:
+To set or change the work folder or email later, run:
 
 ```sh
 chezmoi init --prompt
