@@ -1,8 +1,8 @@
 # dotfiles
 
-My personal dev environment — terminal, editor, shell, and CLI tools.
+My personal dev environment: terminal, editor, shell, and CLI tools.
 
-## What's inside
+## What is inside
 
 | Tool | Config path | Purpose |
 |------|-------------|---------|
@@ -17,74 +17,156 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [lazygit](https://github.com/jesseduffield/lazygit) | `.config/lazygit/config.yml` | Terminal git UI |
 | [yazi](https://github.com/sxyazi/yazi) | `.config/yazi/` | Terminal file manager |
 | [delta](https://github.com/dandavison/delta) | `.config/git/config` | Syntax-highlighting git diff pager |
-| [gh](https://cli.github.com) | — | GitHub CLI |
-| [zoxide](https://github.com/ajeetdsouza/zoxide) | — | Smarter `cd` |
-| [bat](https://github.com/sharkdp/bat) | — | Better `cat` |
-| [fzf](https://github.com/junegunn/fzf) | — | Fuzzy finder |
-| [fd](https://github.com/sharkdp/fd) | — | Better `find` |
-| [ripgrep](https://github.com/BurntSushi/ripgrep) | — | Better `grep` |
-| [carapace](https://carapace.sh) | — | Multi-shell completion engine |
+| [gh](https://cli.github.com) | none | GitHub CLI |
+| [zoxide](https://github.com/ajeetdsouza/zoxide) | none | Smarter `cd` |
+| [bat](https://github.com/sharkdp/bat) | none | Better `cat` |
+| [fzf](https://github.com/junegunn/fzf) | none | Fuzzy finder |
+| [fd](https://github.com/sharkdp/fd) | none | Better `find` |
+| [ripgrep](https://github.com/BurntSushi/ripgrep) | none | Better `grep` |
+| [carapace](https://carapace.sh) | none | Multi-shell completion engine |
 | [mise](https://mise.jdx.dev) | `~/.config/mise/config.toml` (untracked) | Runtime version manager |
 | [herdr](https://herdr.dev) | `.config/herdr/config.toml` | Agent workspace multiplexer |
-| [jq](https://jqlang.github.io/jq/) | — | JSON processor |
+| [jq](https://jqlang.github.io/jq/) | none | JSON processor |
 
----
+Every config path is relative to `~`.
 
-## Key idea
+## How it works
 
-Tools expect their configs at fixed paths (e.g. `~/.config/nvim/`), but you want those files tracked in a git repo. [GNU Stow](https://www.gnu.org/software/stow/) — a symlink manager — bridges the two: your real files live in `~/dotfiles/`, and Stow symlinks them into place:
+[chezmoi](https://www.chezmoi.io) deploys these files. The repo is the chezmoi
+source directory. It lives at `~/.local/share/chezmoi`, and `chezmoi cd` opens
+a shell there.
+
+The `.chezmoiroot` file tells chezmoi that the home directory starts at
+`home/`. chezmoi renames `dot_` to `.` when it deploys a file:
 
 ```
-~/dotfiles/nvim/   ──►  ~/.config/nvim/   (symlink)
-~/dotfiles/tmux/   ──►  ~/.config/tmux/   (symlink)
+home/dot_zshrc                    →  ~/.zshrc
+home/dot_config/nvim/init.lua     →  ~/.config/nvim/init.lua
+home/dot_config/starship.toml     →  ~/.config/starship.toml
 ```
 
-You edit files at the paths tools already expect — they just happen to be symlinks. Git sees the real files inside `~/dotfiles/`.
+chezmoi copies each file into place. The files in `~` are not symlinks. If you
+edit `~/.config/nvim/init.lua` directly, the repo does not change until you run
+`chezmoi re-add`. The safer habit is `chezmoi edit`, which opens the repo copy.
 
----
+The repo root holds what chezmoi does not deploy:
+
+- `install.sh`, `install.linux.sh` and `install.common.sh` install the tools and run `chezmoi apply`.
+- `check.sh` checks that the machine matches the repo.
+- `terminfo/` holds an `xterm-256color` variant with undercurl support for herdr panes. The installer compiles it into `~/.terminfo` with `tic`.
+- `cheatsheet.md` lists keybindings and commands for the tools.
+
+`home/.chezmoiignore` lists runtime files that tools write next to their
+configuration, for example herdr logs, Worktrunk approvals and the tmux plugins
+that TPM clones. chezmoi never adds or deploys these files.
+
+## Daily workflow
+
+These are the commands you use most. Each one works from any directory.
+
+| Task | Command |
+|------|---------|
+| Edit a config in the repo copy | `chezmoi edit ~/.config/nvim/init.lua` |
+| Edit, then deploy when the editor closes | `chezmoi edit --apply ~/.zshrc` |
+| See what `apply` will change in `~` | `chezmoi diff` |
+| Deploy the repo to `~` | `chezmoi apply` |
+| Copy changes that a tool made in `~` back into the repo | `chezmoi re-add` |
+| Start to track a new file or directory | `chezmoi add ~/.config/<tool>` |
+| Stop tracking a file, but keep it in `~` | `chezmoi forget ~/.config/<tool>/file` |
+| List files that differ between `~` and the repo | `chezmoi status` |
+| Open a shell in the repo | `chezmoi cd` |
+| Run git in the repo from anywhere | `chezmoi git -- status` |
+| Pull the latest commits and deploy them | `chezmoi update` |
+| Check the whole machine against the repo | `~/.local/share/chezmoi/check.sh` |
+
+### Change a config and push it
+
+```sh
+chezmoi edit --apply ~/.config/tmux/tmux.conf
+chezmoi cd
+git add -A
+git commit -m "Describe the change"
+git push
+exit
+```
+
+Without `chezmoi cd`, use `chezmoi git -- add -A`, `chezmoi git -- commit -m "..."`
+and `chezmoi git -- push`.
+
+### Keep a change that a tool made
+
+Some tools write their own configuration. For example, `:Lazy update` in Neovim
+rewrites `lazy-lock.json`, and `ya pkg` rewrites the yazi `package.toml`. These
+writes change the copy in `~`, not the repo. To keep them, run:
+
+```sh
+chezmoi diff        # read the change first
+chezmoi re-add      # copy every changed file back into the repo
+chezmoi git -- add -A
+chezmoi git -- commit -m "Update Neovim plugin versions"
+chezmoi git -- push
+```
+
+`chezmoi diff` shows the change in reverse, because it shows what `apply` will
+do to `~`. If you do not want to keep the change, run `chezmoi apply` to put
+the repo version back.
+
+### Add a new tool
+
+```sh
+chezmoi add ~/.config/<tool>
+chezmoi diff            # must show nothing
+chezmoi git -- add -A
+chezmoi git -- commit -m "Add <tool> configuration"
+chezmoi git -- push
+```
+
+If the tool writes runtime files into its configuration directory, add them to
+`home/.chezmoiignore` before you run `chezmoi add`. If the tool must be
+installed on every machine, also add it to `install.sh` and `install.linux.sh`.
 
 ## Fresh machine setup
 
 ### 1. Clone the repo
 
 ```sh
-git clone https://github.com/<your-username>/dotfiles.git ~/dotfiles
+git clone https://github.com/LuisBarroso37/dotfiles.git ~/.local/share/chezmoi
 ```
 
 ### 2. Run the install script
 
-**macOS**:
+On macOS:
 
 ```sh
-cd ~/dotfiles
-chmod +x install.sh
-./install.sh
+~/.local/share/chezmoi/install.sh
 ```
 
-**Linux** (`pacman`, `apt`, or `dnf` — Arch/Manjaro/CachyOS, Debian/Ubuntu/Mint, Fedora/RHEL/Rocky; 64-bit only):
+On Linux with `pacman`, `apt`, or `dnf` (Arch, Manjaro, CachyOS, Debian,
+Ubuntu, Mint, Fedora, RHEL, Rocky, 64-bit only), run the script as your own
+user. Do not use sudo, because the script asks for it when it needs it:
 
 ```sh
-cd ~/dotfiles
-chmod +x install.linux.sh
-./install.linux.sh      # NOT with sudo — it escalates on its own
+~/.local/share/chezmoi/install.linux.sh
 ```
 
-Both scripts install every tool above, install Stow and symlink all configs,
-install mise (with no language runtimes pinned — a fresh clone is
-language-free), set up tmux/sesh plugin machinery, and finish with a
-verification pass. Shared post-install steps live in `install.common.sh`,
-sourced by both. An optional untracked `install.local.sh` next to them can
-hold per-machine toolchains.
+Both scripts install every tool above, including chezmoi, and run
+`chezmoi apply`. If a file already exists where chezmoi deploys one, the
+installer moves it to `~/.dotfiles-backup/<date>/` first. The scripts also
+install mise with no language runtimes pinned, set up the tmux and sesh
+plugins, compile the terminfo entry, and finish with a verification pass.
+
+`install.common.sh` holds the steps that both scripts share. An optional
+untracked `install.local.sh` next to them can hold per-machine toolchains.
 
 ### 3. Restart your terminal
 
 ### 4. Recreate your git identity
 
-`~/.gitconfig` is untracked (it overrides the tracked `.config/git/config`) and
-isn't created by this repo, so write it by hand. Give it your default
-identity, then add an `includeIf` per directory that needs a different one
-(e.g. work repos under a folder that isn't this one) — bundle a different SSH
-key into the same override with `core.sshCommand`:
+The repo does not track `~/.gitconfig`, and its settings override the tracked
+`~/.config/git/config`. Write it by hand. Give it your default identity. Then
+add an `includeIf` for each directory that needs a different identity, for
+example work repos. The same override can select a different SSH key with
+`core.sshCommand`:
 
 ```sh
 cat > ~/.gitconfig <<'EOF'
@@ -108,89 +190,85 @@ EOF
 
 ### 5. Set up private-registry tokens (optional)
 
-Only needed for `npm`, `terraform`, or `go` against a private, token-gated
-registry. This repo ships no tokens or vault names — that lives in an
-untracked `opread` shell function in `~/.zshrc.local` (worked example in
-[cheatsheet.md](cheatsheet.md#gitlab-tokens-opread)), fetched on demand rather
-than at shell startup.
-
----
+You need this step only for `npm`, `terraform`, or `go` against a private
+registry that requires a token. This repo ships no tokens or vault names. An
+untracked `opread` shell function in `~/.zshrc.local` fetches them when a
+command needs them, not at shell startup. See the worked example in
+[cheatsheet.md](cheatsheet.md#gitlab-tokens-opread).
 
 ## Updating an existing machine
 
-```sh
-cd ~/dotfiles
-git pull && ./install.sh      # or ./install.linux.sh
-```
-
-Re-running the install script deploys updated configs and installs missing
-packages. On macOS, `brew install` does not upgrade already installed formulae:
-use `brew update && brew upgrade` for tool upgrades (and
-`brew upgrade --cask --greedy` to include self-updating casks). Check the
-result with `./check.sh`.
-
----
-
-## How Stow works in practice
-
-Each tool has its own subdirectory at the repo root; `.stowrc` sets the stow
-target to `~/.config`, so `stow .` creates a directory-level symlink per
-package:
-
-```
-dotfiles/
-  nvim/          →  ~/.config/nvim  (symlink)
-  tmux/          →  ~/.config/tmux  (symlink)
-  starship.toml  →  ~/.config/starship.toml
-```
-
-`README.md`, `cheatsheet.md`, and the `install*.sh` scripts are excluded via
-`.stowrc` ignore rules. Keep `.stowrc` options-only: Stow parses prose in that
-file as CLI options, so even a comment showing `stow -n` can turn deployment
-into a dry run.
-
-**Zsh is a special case** — its dotfiles live in `~`, not `~/.config/`, so
-it's stowed separately:
+To get configuration changes that you pushed from another machine, run:
 
 ```sh
-mkdir -p ~/.config/worktrunk # keep Worktrunk's runtime approvals outside the repo
-stow .                     # all ~/.config packages
-stow --target="$HOME" zsh  # zsh dotfiles → ~
+chezmoi update
 ```
 
-**Two packages are excluded from `stow .`** because a symlink is the
-wrong shape for them:
+If the new commits also add a tool, run the install script again. It installs
+missing packages and applies the configuration:
 
-- `herdr/` — writes runtime state into `~/.config/herdr`, so it must stay a
-  real directory; `install.common.sh` links only `config.toml` into it.
-- `terminfo/` — compiled into `~/.terminfo` with `tic`, not symlinked; carries
-  an `xterm-256color` variant for undercurl support inside herdr panes.
+```sh
+chezmoi update && ~/.local/share/chezmoi/install.sh      # or install.linux.sh
+```
 
-`worktrunk/` **is stowed**, after the installer creates a real
-`~/.config/worktrunk/` directory. Its runtime approvals stay outside the repo.
+On macOS, `brew install` does not upgrade installed formulae. To upgrade the
+tools, run `brew update && brew upgrade`. To include casks that update
+themselves, run `brew upgrade --cask --greedy`. Then run
+`~/.local/share/chezmoi/check.sh` to check the result.
 
-**Machine-specific config** lives in `~/.zshrc.local` (untracked, sourced last
-by `.zshrc`) — put anything you don't want on every machine there (embedded
-toolchains, Docker hosts, SDKMAN). **Language runtimes** follow the same
-split via [mise](https://mise.jdx.dev): the tracked `.zshrc` only activates
-mise; actual versions live in an untracked `~/.config/mise/config.toml`:
+## Dev containers
+
+A dev container is a Docker container that holds a project's tools. The
+[devcontainer CLI](https://github.com/devcontainers/cli) can install these
+dotfiles into any project's container. The project repo does not need to
+mention them. You keep the flags in your own shell:
+
+```sh
+alias dcup='npx -y @devcontainers/cli@0.90.0 up --workspace-folder . --docker-path podman \
+  --dotfiles-repository https://github.com/LuisBarroso37/dotfiles \
+  --dotfiles-target-path "~/.local/share/chezmoi" \
+  --dotfiles-install-command install.linux.sh'
+alias dcsh='npx -y @devcontainers/cli@0.90.0 exec --workspace-folder . --docker-path podman zsh -l'
+```
+
+Run `dcup` from a repo that has a `.devcontainer/` folder, then `dcsh` to open
+a shell inside the container. If you use Docker instead of Podman, remove
+`--docker-path podman`.
+
+- The CLI clones this repo from GitHub. Push your changes before you build a
+  new container, or the container gets the old version.
+- `--dotfiles-target-path` puts the clone where chezmoi expects it, so the
+  daily workflow commands also work inside the container. The quotes stop your
+  host shell from expanding `~`.
+- The CLI runs `install.linux.sh` once, when it creates the container. The
+  script skips ghostty and the Nerd Font in a container, because your host
+  terminal draws the text.
+- The login shell stays `bash`, so `dcsh` starts `zsh -l` itself.
+- The first `nvim` launch takes a few minutes while Mason installs the
+  language servers. The npm-based servers need Node.js in the container.
+
+## Machine-specific configuration
+
+`~/.zshrc.local` is untracked, and `~/.zshrc` sources it last. Put anything
+that only one machine needs there, for example embedded toolchains, Docker
+hosts or SDKMAN.
+
+Language runtimes follow the same split through [mise](https://mise.jdx.dev).
+The tracked `~/.zshrc` only activates mise. The versions live in an untracked
+`~/.config/mise/config.toml`:
 
 ```sh
 mise use -g node@lts go@latest java@corretto-25
 ```
 
-**Neovim is tuned for JS/TS/web** (`vtsls`, ESLint LSP, `prettier` via
-conform), but each piece self-gates on the project actually having a config
-for it, so it's inert on non-JS machines. Anything shaped by one codebase
-(LSP heap sizes, per-repo lint autocmds) belongs in that repo's own
-`.nvim.lua`, loaded via `vim.o.exrc`.
+## Notes
+
+Neovim is set up for JS, TS and web work (`vtsls`, ESLint LSP, and `prettier`
+through conform). Each piece starts only if the project has a configuration
+for it, so nothing runs on machines without JS projects. Settings that belong
+to one codebase, for example LSP heap sizes or per-repo lint autocmds, go in
+that repo's own `.nvim.lua`. Neovim loads that file through `vim.o.exrc`.
 
 On macOS, the [sesh Raycast extension](https://www.raycast.com/joshmedeski/sesh)
 can switch to running tmux sessions from outside Ghostty. It uses the same
-sessions as the shell and tmux pickers; it needs a running tmux server.
-
-To add a new tool to the repo:
-
-1. `mkdir ~/dotfiles/<tool>/`
-2. `mv ~/.config/<tool>/ ~/dotfiles/<tool>/`
-3. `cd ~/dotfiles && stow .`
+sessions as the shell and tmux pickers. It needs a running tmux server.
