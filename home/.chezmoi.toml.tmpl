@@ -1,12 +1,15 @@
-{{- /* The work folder and email stay out of this public repo. chezmoi init asks for them once and keeps them in ~/.config/chezmoi/chezmoi.toml. */ -}}
-{{- $workDir := get . "workDir" | default "" -}}
+{{- /* The work details stay out of this public repo. chezmoi init asks for them once and keeps them in ~/.config/chezmoi/chezmoi.toml. */ -}}
+{{- $workGitHost := get . "workGitHost" | default "" -}}
 {{- $workEmail := get . "workEmail" | default "" -}}
+{{- $workDir := get . "workDir" | default "" -}}
 {{- if stdinIsATTY -}}
-{{-   $workDir = promptStringOnce . "workDir" "Work folder whose repos use the work git identity, for example ~/work (empty to skip)" -}}
+{{-   $workGitHost = promptStringOnce . "workGitHost" "SSH host of your work git remotes, for example gitlab.com (empty to skip)" -}}
 {{-   $workEmail = promptStringOnce . "workEmail" "Work git email (empty to skip)" -}}
+{{-   $workDir = promptStringOnce . "workDir" "Work folder with an AGENTS.md for OpenCode, for example ~/work (empty to skip)" -}}
 {{- end -}}
 sourceDir = {{ .chezmoi.workingTree | quote }}
 
 [data]
-  workDir = {{ $workDir | trimSuffix "/" | quote }}
+  workGitHost = {{ $workGitHost | quote }}
   workEmail = {{ $workEmail | quote }}
+  workDir = {{ $workDir | trimSuffix "/" | quote }}

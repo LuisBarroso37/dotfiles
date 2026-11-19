@@ -18,6 +18,7 @@ My personal dev environment: terminal, editor, shell, and CLI tools.
 | [yazi](https://github.com/sxyazi/yazi) | `.config/yazi/` | Terminal file manager |
 | [Git](https://git-scm.com) | `.gitconfig`, `.gitconfig-work`, `.config/git/config` | Identity and shared git settings |
 | [delta](https://github.com/dandavison/delta) | `.config/git/config` | Syntax-highlighting git diff pager |
+| [OpenSSH](https://www.openssh.com) | `.ssh/config` | SSH key per git host (the keys are not tracked) |
 | [OpenCode](https://opencode.ai) | `.config/opencode/` | AI coding agent: configuration, instructions and the simple-english skill |
 | [gh](https://cli.github.com) | none | GitHub CLI |
 | [zoxide](https://github.com/ajeetdsouza/zoxide) | none | Smarter `cd` |
@@ -66,8 +67,8 @@ OpenCode service password, the generated Trellis plugin and the work-only
 skills out of the repo.
 
 Files that end in `.tmpl` are templates: `home/dot_gitconfig.tmpl`,
-`home/dot_gitconfig-work.tmpl` and the OpenCode `opencode.json.tmpl`. chezmoi
-fills in the work folder and the work email from
+`home/dot_gitconfig-work.tmpl`, the SSH `private_config.tmpl` and the OpenCode
+`opencode.json.tmpl`. chezmoi fills in the work details from
 `~/.config/chezmoi/chezmoi.toml`, which `home/.chezmoi.toml.tmpl` creates at
 `chezmoi init`. `chezmoi re-add` skips templates, so change these files with
 `chezmoi edit`, for example `chezmoi edit ~/.gitconfig`.
@@ -172,21 +173,39 @@ untracked `install.local.sh` next to them can hold per-machine toolchains.
 
 ### 3. Restart your terminal
 
-### 4. Git identity
+### 4. Git identity and SSH keys
 
-chezmoi deploys the git identity. `~/.gitconfig` holds the personal identity.
-For repos under your work folder, it includes `~/.gitconfig-work`, which sets
-the work identity and the work SSH key. OpenCode also reads `AGENTS.md` from
-the work folder.
+Copy `id_ed25519_personal` and `id_ed25519_work` into `~/.ssh` by hand. The
+repo holds no keys.
 
-The work folder and the work email stay out of this public repo. The install
-script runs `chezmoi init`, which asks for both once and saves them in
-`~/.config/chezmoi/chezmoi.toml`. If you leave the folder empty, chezmoi adds
-no work rule to `~/.gitconfig`. If you leave the email empty, chezmoi creates
-no `~/.gitconfig-work`. chezmoi asks only in a terminal, so a non-interactive
-install gets neither.
+chezmoi deploys the git identity and `~/.ssh/config`. The remote URL of a repo
+picks the identity:
 
-To set or change the work folder or email later, run:
+| Remote URL starts with | SSH key | Git identity |
+|------------------------|---------|--------------|
+| `git@github-personal:` | personal | personal, from `~/.gitconfig` |
+| `git@<work host>:` | work | work, from `~/.gitconfig-work` |
+| anything else | SSH default | personal |
+
+`github-personal` is an SSH alias for `github.com`. Clone personal repos with
+it, for example `git clone git@github-personal:LuisBarroso37/dotfiles.git`.
+
+The work host, the work email and the work folder stay out of this public
+repo. The install script runs `chezmoi init`, which asks for them once and
+saves them in `~/.config/chezmoi/chezmoi.toml`:
+
+- The work host is the host in your work remotes, for example `gitlab.com`. If you leave it empty, chezmoi adds no work rule to `~/.gitconfig` and `~/.ssh/config`.
+- If you leave the work email empty, chezmoi creates no `~/.gitconfig-work`.
+- OpenCode reads `AGENTS.md` from the work folder. If you leave it empty, OpenCode reads no work instructions.
+
+If the work account is on GitHub too, enter `github.com` as the work host. The
+work key and identity then serve every `git@github.com:` remote. Personal repos
+must use the `github-personal` alias, or they get the work identity.
+
+chezmoi asks only in a terminal, so a non-interactive install gets no work
+configuration.
+
+To set or change the work details later, run:
 
 ```sh
 chezmoi init --prompt

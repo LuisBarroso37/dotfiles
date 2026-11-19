@@ -1,8 +1,8 @@
 [user]
 	name = LuisBarroso37
 	email = 58770446+LuisBarroso37@users.noreply.github.com
-{{- with get . "workDir" }}
+{{- with get . "workGitHost" }}
 
-[includeIf "gitdir/i:{{ . }}/"]
+[includeIf "hasconfig:remote.*.url:git@{{ . }}:**/**"]
 	path = ~/.gitconfig-work
 {{- end }}
