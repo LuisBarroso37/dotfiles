@@ -21,3 +21,6 @@ typeset -U path PATH fpath FPATH manpath MANPATH
 # ~/.zsh_sessions to 35 files. atuin owns shell history here, so the feature buys
 # us nothing.
 export SHELL_SESSIONS_DISABLE=1
+
+# Ryuk cannot clean up resources with rootless Podman on macOS.
+export TESTCONTAINERS_RYUK_DISABLED=true
