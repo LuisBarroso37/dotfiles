@@ -26,7 +26,7 @@
   "nui.nvim": { "branch": "main", "commit": "10fc361835c856ba4233ef5ea135b919bf3dce97" },
   "nvim-lint": { "branch": "master", "commit": "52107ce2076a27a285af781248e2c59bad817cd0" },
   "nvim-lspconfig": { "branch": "master", "commit": "e1c6a5a45d95ad22cf55c874db2ff8ab969556f0" },
-  "nvim-scrollbar": { "branch": "refactor/v2", "commit": "577c488dc6f30cd0e2faa5eebe6e19f7d343181e" },
+  "nvim-scrollbar": { "branch": "main", "commit": "18b11a2b8c7b9c88e531a031a21cfd427062687a" },
   "nvim-treesitter": { "branch": "main", "commit": "b706d642dd20d0922e7e92365dc73617f0fdb4ea" },
   "nvim-treesitter-textobjects": { "branch": "main", "commit": "5c7b0263797dfd1bd6202f2b219f3b53a80b2187" },
   "nvim-ts-autotag": { "branch": "main", "commit": "d7220b55e16ed3c04e88086256def5d282429493" },

@@ -1,6 +1,5 @@
 return {
   "petertriho/nvim-scrollbar",
-  branch = "refactor/v2",
   event = "BufReadPost",
   -- catppuccin is a dependency because config() reads its palette. LazyVim declares
   -- catppuccin `lazy = true`, so nothing else guarantees it is loaded by BufReadPost —
