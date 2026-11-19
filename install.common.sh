@@ -1,15 +1,7 @@
 #!/usr/bin/env bash
 # Shared bootstrap steps for install.sh (macOS) and install.linux.sh (Linux).
 #
-# NOT executable on its own — it is sourced by both installers, which own the
-# platform-specific half (package manager, GUI apps, login shell) and delegate
-# everything after that to the functions here.
-#
-# Why this file exists: the tail used to be copy-pasted into both scripts, with a
-# comment in each claiming they were identical. They were not — the Linux copy
-# had drifted to the point of missing a `mkdir -p ~/.config` whose absence
-# aborted the entire stow step. Extracting it makes that class of drift
-# impossible rather than merely detectable.
+# Source this file from either installer. Keep platform-specific steps in the callers.
 #
 # Contract — the caller must set:
 #   DOTFILES   absolute path to the repo (resolved from the script's own location)
@@ -19,20 +11,8 @@
 # Sourcing this file runs the root check below immediately, so source it early —
 # after the caller's platform guard, before anything that touches $HOME.
 
-# Run as YOURSELF, never `sudo ./install*.sh`. Under sudo $HOME becomes /root, so
-# every user-scoped step in this file silently targets the wrong account:
-#   * stow links the whole repo into /root instead of your home;
-#   * terminfo compiles into /root/.terminfo;
-#   * the gh extension and the conflict backup dir land in root's home.
-# On Linux additionally: chsh switches root's login shell while yours stays on
-# bash (so the install looks like it did nothing), and makepkg — therefore
-# yay/paru — refuses to run as root outright, failing every AUR package.
-#
-# This lives here rather than in the callers on purpose. The steps it protects
-# are all in this file, so a guard in one installer left the other reaching the
-# same code unguarded; on macOS that was covered only incidentally, by Homebrew
-# refusing to run as root and dying first. Both installers escalate with sudo on
-# their own for the package steps that genuinely need it.
+# Run as your normal user. Root installation targets the wrong home and login shell.
+# Both installers call sudo themselves for package steps. AUR builds cannot run as root.
 if [ "$(id -u)" -eq 0 ] && [ -z "${DOTFILES_ALLOW_ROOT:-}" ]; then
   _self="$(basename -- "${0:-install.sh}")"
   echo "!! Do not run this script with sudo or as root." >&2
@@ -45,9 +25,7 @@ if [ "$(id -u)" -eq 0 ] && [ -z "${DOTFILES_ALLOW_ROOT:-}" ]; then
   echo "   (It calls sudo itself for the package installs.)" >&2
   echo "   Genuinely provisioning a root account? DOTFILES_ALLOW_ROOT=1 overrides." >&2
   unset _self
-  # `return` rather than `exit`: this file is always sourced, never executed
-  # directly. `exit` in a sourced file terminates the parent shell process —
-  # callers that wrap the source in `if source ...; then` cannot catch it.
+  # Return so callers can catch failure without terminating their shell.
   return 1
 fi
 
@@ -58,32 +36,12 @@ fi
 # Optional platform-specific first entry in the closing "Next:" list.
 : "${NEXT_STEP_FIRST:=}"
 
-# Packages the caller's package step could not install, space-separated, folded
-# into verify_install's result. BOTH installers append to it, because both of
-# their package steps are deliberately non-fatal and something has to remember
-# that afterwards.
-#
-# This used to say "left empty on Linux", and that was the whole bug: install.
-# linux.sh recorded its failures only in MISSING[], which is *printed* and never
-# consulted again, so a Linux run that could not install ghostty or the Nerd Font
-# still ended in "✓ all checks passed" and exit 0 — and, because that exit status
-# is what gates the login-shell switch at the end, went on to chsh anyway. It now
-# appends here too, exactly like install.sh's casks.
+# Both installers record package failures here, space-separated, for verify_install's exit status.
 : "${FAILED_PKGS:=}"
 
-# EVERY binary name a tool may answer to, primary first, space separated. This is
-# the single table of binary-name knowledge for both installers; bin_name and
-# have_tool below are two views of it, so a new tool is added in exactly one place.
-#
-# More than one name is the normal case, not an exception, and each entry below is
-# a packaging fact that cost a silent failure to learn:
-#   * Homebrew's sevenzip installs only 7zz; the Linux packages provide 7z. yazi's
-#     archive previewer itself resolves `try("7zz") or try("7z")`, so either means
-#     previews work.
-#   * apt's imagemagick is ImageMagick 6, which has convert but NO magick at all.
-#   * Debian renames fd → fdfind and bat → batcat to avoid collisions (the Linux
-#     installer symlinks them back, but the check must pass before that runs).
-#   * wl-clipboard is a package that installs no binary of its own name.
+# Accepted binary names for both installers, primary first and space-separated.
+# Homebrew uses 7zz, Linux uses 7z. ImageMagick 6 provides convert, not magick.
+# Debian renames fd/bat to fdfind/batcat. wl-clipboard provides wl-copy.
 # Tools whose binary matches their package name need no entry.
 tool_bins() {
   case "$1" in
@@ -103,16 +61,13 @@ tool_bins() {
   esac
 }
 
-# The PRIMARY binary — exactly one name, because install.linux.sh consumes it as a
-# literal filename when it extracts a bare binary out of a release archive, and as
-# the thing to ask `--version`.
+# Return one primary name for release extraction and version queries.
 bin_name() {
   local names; names="$(tool_bins "$1")"
   printf '%s\n' "${names%% *}"
 }
 
-# Is a tool usable on this machine? True if ANY of its names resolves. Callers that
-# need to know which one resolved should ask; nothing currently does.
+# Accept any binary name listed for this tool.
 have_tool() {
   local b
   for b in $(tool_bins "$1"); do
@@ -121,10 +76,7 @@ have_tool() {
   return 1
 }
 
-# Stow refuses to overwrite a real file it doesn't own, and a fresh account often
-# ships a skeleton ~/.zshrc — which aborts the whole restow and leaves the install
-# half-applied. Move whatever it objects to into $BACKUP and retry, using stow's
-# own conflict report as the authority on what is in the way.
+# Move conflicting target files into $BACKUP and retry, using Stow's conflict report.
 stow_with_backup() {
   local target="$1"; shift
   local out conflicts rel
@@ -133,31 +85,8 @@ stow_with_backup() {
       [ -n "$out" ] && printf '%s\n' "$out"
       return 0
     fi
-    # Stow reports conflicts as "  * <message>" lines (bin/stow's warn "  * $message").
-    # Stow.pm 2.4.1 emits FIVE distinct target conflicts and this parser used to
-    # understand two of them; the other three were dropped silently, so the loop
-    # below backed nothing up, the retry hit the identical conflict, and the user
-    # got three wasted attempts followed by "still reports conflicts" instead of
-    # a backup. Every form, with the path this has to extract underlined:
-    #
-    #   existing target is not owned by stow: X
-    #   existing target is neither a link nor a directory: X
-    #   existing target is stowed to a different package: X => Y
-    #   cannot stow non-directory P over existing directory target X
-    #   cannot stow directory P over existing non-directory target X
-    #   cannot stow P over existing target X since neither a link nor a directory…
-    #
-    # The "=> Y" case is the likely one after a package rename, and the old first
-    # expression matched it but yielded the literal "X => Y", which then failed the
-    # [ -e ] guard below and was skipped — a silent no-op that looked like a parse.
-    # Hence the ": strip" tail, applied to every extracted path.
-    #
-    # `t strip` after each pattern so the first match wins and one input line can
-    # never produce two output lines: the "since neither a link nor a directory"
-    # form is a prefix-match of the bare "over existing target X" form, and without
-    # the branch both would fire. Anything still unmatched is dropped by `d`, which
-    # is what keeps non-target conflicts ("source is an absolute symlink P => D",
-    # unresolvable by moving anything in $target) out of the backup loop.
+    # Extract targets from Stow's starred conflict lines, including directory mismatches.
+    # The first match wins. Strip "=> destination" and ignore source-only conflicts.
     conflicts="$(printf '%s\n' "$out" | sed -n -E '
 /^ *\* /!d
 s/^ *\* existing target is[^:]*: *//
@@ -199,13 +128,8 @@ run_shared_tail() {
   local rc=0
   echo ""
   cd "$DOTFILES" || return 1
-  # Stow BEFORE cloning TPM: this makes ~/.config/tmux a symlink into the repo, so
-  # the TPM clone below lands at $DOTFILES/tmux/plugins/tpm (gitignored). Cloning
-  # first would create a real ~/.config/tmux directory and conflict on tmux.
-  # A stow failure is recorded and carried to the end rather than aborting: the
-  # remaining steps are independent of it, and verify_install names every config
-  # that is not loaded from the repo — a far more useful report than dying on the
-  # first conflict stow could not resolve.
+  # Stow before cloning TPM so plugins land in the repo's ignored directory.
+  # Record stow failures, but continue so verification can report all missing links.
   echo "==> Stowing dotfiles"
   mkdir -p "$HOME/.config"      # stow aborts if --target from .stowrc doesn't exist
   # Worktrunk writes approvals beside config.toml: don't fold that directory
@@ -213,34 +137,19 @@ run_shared_tail() {
   mkdir -p "$HOME/.config/worktrunk"
   stow_with_backup "$HOME/.config" . || rc=1
   stow_with_backup "$HOME" zsh || rc=1         # zsh dotfiles live in ~, not ~/.config
-  # There is deliberately no bin/ package. gitlab.com HTTPS auth for `go get` on
-  # private modules is ~/.netrc, refreshed on demand by the `opread go` zsh
-  # function — itself untracked in ~/.zshrc.local because it names an employer
-  # 1Password vault. Nothing here installs or generates it.
+  # Private-module credentials stay in ~/.netrc and the untracked ~/.zshrc.local.
 
   ## herdr is stowignored: it writes runtime state (logs, sockets, session.json)
   ## into ~/.config/herdr, so that directory has to stay a real directory rather
   ## than a stow-folded symlink into the repo. Only config.toml is linked, by hand.
   echo "==> Linking herdr config"
-  # An earlier run (before herdr was added to .stowrc's ignore list) folded the
-  # whole directory into a symlink → $DOTFILES/herdr. Left in place, the ln below
-  # resolves source and target to the same path, fails "are the same file", and
-  # `set -e` kills the script before terminfo/TPM/sesh ever run. Unfold it first.
+  # Unfold legacy directory links before linking config.toml to avoid a self-link.
   if [ -L "$HOME/.config/herdr" ]; then
     rm -f "$HOME/.config/herdr"
     echo "   ↳ unfolded stow symlink at ~/.config/herdr into a real directory"
   fi
-  # The same superseded layout left a second link behind: while herdr was still a
-  # stowed package, stow also linked its config.toml straight into ~/.config, as
-  # ~/.config/config.toml → ../dotfiles/herdr/config.toml. Nothing reads that path,
-  # and because stow no longer owns the package no amount of restowing will ever
-  # clean it up — it has to be removed by hand, here.
-  #
-  # Deliberately narrow: only a symlink, and only one resolving into this repo.
-  # ~/.config/config.toml is a plausible name for some other tool's real config, so
-  # anything that is not our own stale link is left strictly alone. Note this is a
-  # different path from ~/.config/herdr/config.toml, which is the correct link and
-  # is (re)created two lines below.
+  # Remove the legacy ~/.config/config.toml only if it is a symlink into this repo.
+  # Preserve other tools' files. The correct link is ~/.config/herdr/config.toml.
   if [ -L "$HOME/.config/config.toml" ]; then
     local stale
     stale="$(readlink -f "$HOME/.config/config.toml" 2>/dev/null)" || stale=""
@@ -307,8 +216,7 @@ run_shared_tail() {
   return "$rc"
 }
 
-# The package step alone used to be the only thing reported, so a run that stowed
-# nothing still ended with "Done!". Check what actually landed.
+# Report installed tools and links, not just package-manager success.
 verify_install() {
   echo ""
   echo "==> Verifying"
@@ -319,49 +227,20 @@ verify_install() {
     have_tool "$tool" || { echo "   ✗ missing binary: $(bin_name "$tool") ($tool)"; _fail=1; }
   done
 
-  # yazi's preview backends, reported but not fatal — yazi itself works without
-  # them, you just lose video thumbnails, archive, PDF and HEIC/JXL previews. They
-  # were absent from this list entirely, which is how they stayed missing on every
-  # rebuild back when they lived in install.local.sh.
+  # Missing preview backends only warn, since yazi works without previews.
   for tool in ffmpeg sevenzip poppler imagemagick; do
     have_tool "$tool" || echo "   ! yazi preview backend missing: $tool (previews only)"
   done
 
-  # Dev-time only, so warned about rather than failed on: both installers install
-  # it and check.sh's C8 criterion lints these very scripts with it, but nothing
-  # at runtime needs it — a machine without it still has a working config.
-  # (Comment deliberately not opened with the tool's own name: a `#` line starting
-  # with it is read by the linter as a malformed directive, SC1072/SC1073.)
-  # It was absent from both loops, which is how a run could satisfy "all checks
-  # passed" and then have check.sh skip C8 for a tool the install was supposed to
-  # provide. git and curl are deliberately NOT listed: nothing here could have run
-  # without curl (Homebrew's installer, every release download) or git (the
-  # TPM clone), so a check for them can only ever pass.
+  # Missing script linting only warns, since runtime configuration does not need it.
   have_tool shellcheck || echo "   ! shellcheck missing (lints these install scripts; check.sh C8)"
 
-  # Packages the package step could not install. Every package step in both
-  # installers is non-fatal on purpose, so their failures are only visible here —
-  # and a cask like the nerd font has no binary anywhere in the checks above to
-  # give it away.
+  # Include recorded failures that binary checks cannot detect, such as the font.
   for pkg in ${FAILED_PKGS-}; do
     echo "   ✗ package missing or unusable: $pkg"; _fail=1
   done
 
-  # Check a representative config FILE per package, never the directory.
-  #
-  # Stow has two equally-correct layouts and the directory-level check only
-  # recognised one of them. When the target doesn't exist yet stow *folds* the
-  # package — ~/.config/nvim becomes a symlink to repo/nvim. When the target is
-  # already a real directory holding runtime state (~/.config/atuin has
-  # history.db; ~/.config/herdr has sockets and logs) stow *unfolds* instead,
-  # leaving a real directory and symlinking the individual files inside it.
-  #
-  # Resolving the directory therefore reported a perfectly healthy unfolded
-  # package as broken — it flagged ~/.config/atuin on a working machine. Asking
-  # about the file the tool actually reads is immune to which layout stow chose:
-  # folded, it resolves through the directory link; unfolded, the file is itself
-  # the link. Either way the question is the one that matters — does this tool
-  # load its config from the repo?
+  # Resolve representative files, since Stow can link either directories or individual files.
   for l in "$HOME/.zshrc" "$HOME/.zshenv" "$HOME/.zprofile" \
            "$HOME/.config/nvim/init.lua" "$HOME/.config/tmux/tmux.conf" \
            "$HOME/.config/sesh/sesh.toml" "$HOME/.config/starship.toml" \
@@ -393,19 +272,10 @@ verify_install() {
   return "$_fail"
 }
 
-# The single call both installers end with. Verification used to be advisory:
-# it printed ✗ lines and the script still finished with "Done!" and exit 0, so
-# neither a human skimming the tail nor a CI job could tell a good run from a
-# broken one. Now its result is the script's exit status — while still printing
-# the next-steps block first, since those are useful either way.
+# Always print next steps, but return failure if shared steps or verification fail.
 finish_install() {
   local rc=0
-  # `|| rc=1` rather than a bare call, for two reasons. It keeps a failure the tail
-  # reports (stow) out of the "Done!" path, and — because `set -e` does not apply
-  # inside a function whose result is being tested — it is what lets the steps in
-  # there warn and carry on instead of taking the script down mid-way. Both halves
-  # of that are the point: get to verify_install no matter what, and let its
-  # verdict be the exit status.
+  # Testing the return status disables errexit inside the tail so verification always runs.
   run_shared_tail || rc=1
   verify_install || rc=1
   print_next_steps
@@ -419,14 +289,7 @@ finish_install() {
 # Closing message. Set NEXT_STEP_FIRST beforehand to prepend a platform-specific
 # step — Linux uses it for the login-shell re-login.
 #
-# The git identity step is here rather than automated because it cannot live in
-# this repo: it is per-machine (work vs personal name and address) and secondly it
-# has to go in ~/.gitconfig, which is NOT stowed. The stowed git package provides
-# ~/.config/git/config, and ~/.gitconfig takes precedence over it — so identity
-# plus the [includeIf "gitdir:..."] rules that switch to a personal identity for
-# certain trees have to be written there to win. Nothing created that file and no
-# step mentioned it, so the first commit on a fresh machine died with "Author
-# identity unknown" and left you guessing. README.md carries the snippet.
+# Keep machine-specific identity and includeIf rules in ~/.gitconfig, which takes precedence over the stowed Git configuration.
 print_next_steps() {
   local n=1 step
   echo ""

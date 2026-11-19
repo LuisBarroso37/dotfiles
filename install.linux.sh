@@ -9,12 +9,7 @@ set -euo pipefail
 #   apt      Debian, Ubuntu, Mint, Pop!_OS            debian:trixie
 #   dnf      Fedora, RHEL, Rocky, AlmaLinux           fedora:latest
 #
-# 64-bit only — x86_64 and aarch64. Raspbian was listed on the apt line until it
-# was pointed out that a 32-bit userland (armv7l/armhf) gets no GitHub-release
-# fallback whatsoever: gh_release_install returns 1 for every arch that isn't
-# x86_64 or aarch64, and eight of the tools below are in no apt repo at all —
-# herdr among them. 64-bit Raspberry Pi OS is
-# Debian and takes the apt path unchanged; the 32-bit image is not supported.
+# Only x86_64 and aarch64 are supported. Use the 64-bit Raspberry Pi OS with apt.
 #
 # Each was run end-to-end as a non-root sudo user in a clean container of the
 # image named above, finishing with every verification check passing — not merely
@@ -25,37 +20,16 @@ set -euo pipefail
 # actually tested. And a container exercises no GUI, so ghostty and the Nerd Font
 # are confirmed to *install* but never to render.
 #
-# NOT supported, deliberately: zypper (openSUSE) and xbps (Void) were removed
-# rather than carried as untested guesses — a branch that claims support and then
-# fails on a wrong package name is worse than an upfront "unsupported". Alpine
-# (apk) likewise: it is musl, so the prebuilt glibc binaries this script falls
-# back to would not even load. Adding one back means verifying its package names
-# and, for Alpine, teaching gh_release_install to prefer musl assets.
+# zypper, xbps and apk are unsupported. Alpine also needs musl-specific release selection.
 #
-# Philosophy — because we can't know the distro *or* which tools its repos carry:
-#   1. Detect the package manager (not the distro name) at runtime.
-#   2. Best-effort install every tool via that PM; whatever the repo doesn't
-#      carry is REPORTED at the end with a fallback recipe — never pretended.
-#   3. On Arch, fall through to the AUR (yay/paru) for the three tools no distro
-#      packages: sesh, carapace, herdr. Bootstrapped if no helper is installed.
-#   3b. Then fall through to upstream GitHub releases, into ~/.local/bin. This is
-#      what makes non-Arch distros viable: Debian has no yazi/sesh/carapace/herdr
-#      and no atuin either, and Fedora additionally lacks lazygit/starship, none
-#      of which have an AUR to fall back on. The same fallback also replaces a
-#      packaged tool that is too OLD to work with this repo's configs (neovim,
-#      fzf — see min_version), because "installed" and "usable" are not the same
-#      claim. Downloads are sha256-verified whenever upstream publishes a sum.
-#   4. mise (runtime version manager) comes from the repo when packaged and from
-#      its own installer otherwise; language runtimes are then chosen per machine
-#      with `mise use -g` (see .zshrc).
-#   5. The tail (stow, TPM, sesh file, verification) is shared with
-#      install.sh — it lives in install.common.sh, sourced below.
+# Try native packages, then AUR on Arch, then GitHub releases into ~/.local/bin.
+# Release downloads use upstream checksums when available and replace unusably old packages.
+# Report missing tools with manual recipes. mise also has its own installer fallback.
+# Shared setup and verification live in install.common.sh.
 #
 # Re-running this script is safe: every step is idempotent.
 
-# Resolve the repo from this script's own location, so the bootstrap works from a
-# clone anywhere — not just ~/dotfiles. (Was hardcoded to $HOME/dotfiles, which
-# broke `git clone … ~/src/dotfiles && ./install.linux.sh`.)
+# Resolve the repo from this script, regardless of the clone location.
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Mirror of install.sh's guard, pointing the other way.
@@ -64,38 +38,23 @@ if [ "$(uname -s)" = "Darwin" ]; then
   exit 1
 fi
 
-# Sourced early and deliberately: install.common.sh runs the refuse-to-run-as-root
-# check at source time (it guards the stow/terminfo steps that live in there), and
-# derives $BACKUP from $HOME. So nothing above this line may touch $HOME.
-# Provides bin_name, stow_with_backup and finish_install (which runs the tail,
-# verifies, prints next steps and returns non-zero if verification failed),
-# plus the $BACKUP default.
+# Source shared steps before touching $HOME so the root guard runs first.
 # shellcheck source=install.common.sh
 source "$DOTFILES/install.common.sh"
 
-# Package-manager chatter is verbose and mostly noise, so it goes to a log and
-# only surfaces when something actually fails. NOT /dev/null: the old script sent
-# stderr there too, which swallowed sudo's password prompt and made the install
-# look like it had hung.
-# mktemp instead of $$: PIDs are predictable on older kernels and a pre-created
-# symlink at a PID-named path would cause > "$LOG" to truncate whatever the symlink
-# points at, then >> "$LOG" to append to it — a TOCTOU write-anywhere primitive.
+# Keep package output in a log for troubleshooting. Authenticate sudo before redirecting output.
+# mktemp prevents predictable paths from following an attacker's symlink.
 LOG="$(mktemp)"
 
 MISSING=()     # tools no repo could provide → reported at the end with a recipe
 UNVERIFIED=()  # GitHub-release downloads no upstream checksum covered → also reported
 
-# GitHub allows 60 API requests/hour per unauthenticated IP, and the release
-# fallback spends one per unpackaged tool — so a Debian or Fedora run costs ~8,
-# and a few re-runs (or a shared/NAT'd address) exhausts it. A token lifts the
-# ceiling to 5000, so use one if the environment or an authenticated gh has it.
+# Use a token when available to raise GitHub's API limit from 60 to 5000 requests/hour.
 GH_API_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 if [ -z "$GH_API_TOKEN" ] && command -v gh >/dev/null 2>&1; then
   GH_API_TOKEN="$(gh auth token 2>/dev/null || true)"
 fi
-# The token is interpolated into a quoted curl-config line below, where a quote or
-# backslash would be interpreted. Real GitHub tokens are [A-Za-z0-9_] only, so this
-# rejects nothing legitimate and refuses to send anything it can't quote safely.
+# Reject characters that cannot be safely interpolated into curl's quoted header.
 case "$GH_API_TOKEN" in
   "") ;;
   *[!A-Za-z0-9_]*)
@@ -104,19 +63,9 @@ case "$GH_API_TOKEN" in
 esac
 GH_RATE_LIMITED=0   # set when the API refuses us, so the report can say so
 
-# One GET against the GitHub API, printing the body with the HTTP status on its own
-# final line. Returns whatever curl returns.
-#
-# The token goes in on STDIN via --config, never as `-H` on the command line. An
-# argument list is world-readable on Linux (/proc/<pid>/cmdline), so a token passed
-# as -H is exposed to every other local user for the lifetime of the request.
-#
-# The quotes around the header value are load-bearing, and not obviously so: with
-# an unquoted `header = Authorization: Bearer <token>` curl reads the file without
-# any complaint and sends no header at all. Measured against /rate_limit — quoted
-# reports the authenticated ceiling of 5000, unquoted reports 60, identical to
-# sending nothing. A silent downgrade back to the exact rate limiting this code
-# exists to avoid, with no error to notice.
+# Return the response body followed by the HTTP status on its own line.
+# Pass the token through stdin, not process arguments that other users can read.
+# Quote the header value, since curl silently ignores an unquoted value with spaces.
 gh_api_get() {
   if [ -n "$GH_API_TOKEN" ]; then
     printf 'header = "Authorization: Bearer %s"\n' "$GH_API_TOKEN" \
@@ -126,10 +75,7 @@ gh_api_get() {
   fi
 }
 
-# The GitHub-release fallback installs into ~/.local/bin. .zshrc already puts it
-# first on PATH for future shells, but this run needs it too — otherwise the
-# `command -v` checks in install_tool and verify_install can't see what we just
-# installed and would report it missing.
+# Put release downloads on PATH for this run, not only future zsh sessions.
 mkdir -p "$HOME/.local/bin"
 case ":$PATH:" in *":$HOME/.local/bin:"*) : ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
 export PATH
@@ -140,10 +86,7 @@ if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
 # ---------------------------------------------------------------------------
 # 0. Prime sudo up front
 # ---------------------------------------------------------------------------
-# Package output is redirected to $LOG below, so a sudo prompt raised mid-loop
-# would be invisible and the script would sit there looking dead. Authenticate
-# once here, where the prompt is on the terminal, then keep the timestamp warm
-# for the rest of the run.
+# Authenticate while the prompt is visible, then keep sudo authorization active.
 if [ -n "$SUDO" ]; then
   echo "==> Requesting sudo (needed to install packages)"
   sudo -v || { echo "!! sudo authentication failed" >&2; exit 1; }
@@ -196,39 +139,16 @@ pkg_name() { # map a tool to this PM's package name (differences are the excepti
     poppler)     case "$PM" in pacman) echo "poppler" ;; *) echo "poppler-utils" ;; esac ;;
     imagemagick) case "$PM" in dnf) echo "ImageMagick" ;; *) echo "imagemagick" ;; esac ;;
     shellcheck)  case "$PM" in dnf) echo "ShellCheck" ;; *) echo "shellcheck" ;; esac ;;
-    # Fedora has no package called ffmpeg at all: it ships ffmpeg-free, the
-    # patent-clean rebuild, which does NOT declare `Provides: ffmpeg`. Asking dnf
-    # for "ffmpeg" therefore failed outright and every Fedora box came up with
-    # yazi unable to preview video.
+    # Fedora names its packaged build ffmpeg-free, not ffmpeg.
     ffmpeg)      case "$PM" in dnf) echo "ffmpeg-free" ;; *) echo "ffmpeg" ;; esac ;;
-    # ncurses-bin supplies tic, used to compile terminfo/ below. ncurses-term is
-    # the second half and just as load-bearing: it carries the tmux-256color
-    # entry. tmux.conf does NOT set that — it says so explicitly at the top —
-    # because tmux >= 3.1 already defaults default-terminal to tmux-256color on
-    # its own, which is precisely why the entry has to exist: nothing in this
-    # repo would name a different one. Without it everything started inside tmux
-    # fails its terminal lookup and nvim greets you with "E558: Terminal entry
-    # not found in terminfo". Only apt splits the two.
+    # apt needs ncurses-bin for tic and ncurses-term for tmux's default tmux-256color entry.
     ncurses)     case "$PM" in apt) echo "ncurses-bin ncurses-term" ;; *) echo "ncurses" ;; esac ;;
     *)           echo "$1" ;;
   esac
 }
 
-# Binary-name knowledge lives in install.common.sh's tool_bins table, not here.
-# This file used to carry two more mappings of its own — tool_bin (wl-clipboard →
-# wl-copy) and alt_bins (Debian's fdfind/batcat, ImageMagick 6's convert) — which
-# meant the same question, "which binaries prove this tool is installed?", was
-# answered in two files that could drift apart. Both are now folded into tool_bins,
-# with bin_name giving the primary name and have_tool accepting any of them.
-#
-# The packaging facts those two encoded are preserved in tool_bins' comment: Debian
-# renames fd/bat, and apt's imagemagick is IM6 with convert but no magick. Note the
-# asymmetry that survives here: convert counts as evidence the package landed, but
-# it is NOT equivalent — see tool_note, which says so on the ✓ line.
-
-# A caveat appended to the ✓ line when what we found is not the whole tool. yazi's
-# HEIC/AVIF/JXL preview command is literally `magick`, so an IM6 machine must be
-# told the previews are gone rather than shown a bare ✓ implying they work.
+# Binary aliases live in install.common.sh. ImageMagick 6 counts as installed,
+# but yazi's HEIC/AVIF/JXL previews require magick, so report the limitation.
 tool_note() {
   case "$1" in
     imagemagick)
@@ -256,24 +176,8 @@ echo "==> Refreshing package index"
 case "$PM" in
   apt)    $SUDO apt-get update >>"$LOG" 2>&1 || true ;;
   dnf)
-    # dnf refreshes implicitly on install, but RHEL/Rocky/AlmaLinux need EPEL
-    # enabled before any of it is reachable: stow, fzf, bat, fd, ripgrep, zoxide
-    # and atuin are ALL EPEL-only there, so without this even the stow step —
-    # the one thing this whole script exists to do — was unobtainable. Fedora
-    # has no epel-release package (it doesn't need one), so a failure here is
-    # the normal case on Fedora and is deliberately ignored.
-    # Failure on Fedora (no epel-release package) is expected and ignored.
-    # Failure on RHEL/Rocky/Alma means EPEL-only tools (stow, fzf, bat, fd,
-    # ripgrep, zoxide, atuin) won't be found in any repo — warn visibly.
-    #
-    # The guard has to be the DISTRO, not $PM. This arm is `dnf)`, so the old
-    # `[ "$PM" = dnf ]` was tautologically true and every single Fedora run
-    # printed a "!! EPEL setup failed" banner for the outcome the comment three
-    # lines up calls expected and ignorable — training the reader to skip the one
-    # warning that actually matters on RHEL. Matched as a whole line (and with
-    # optional quotes, since os-release permits ID="fedora" and the RHEL-likes
-    # do quote theirs) so ID_LIKE=fedora on Rocky/Alma/CentOS — where EPEL is
-    # exactly what we need and its absence IS the problem — still warns.
+    # RHEL derivatives need EPEL for tools including stow. Fedora does not need it.
+    # Match ID, not ID_LIKE, so derivatives still warn if EPEL installation fails.
     $SUDO dnf install -y epel-release >>"$LOG" 2>&1 </dev/null \
       || { grep -Eq '^ID="?fedora"?$' /etc/os-release 2>/dev/null \
            || echo "!! EPEL setup failed — EPEL packages may not install (see $LOG)" >&2; } ;;
@@ -307,20 +211,9 @@ if [ "$PM" = pacman ]; then
   [ -n "$AUR" ] && echo "   AUR helper: $AUR"
 fi
 
-# makepkg refuses to run as root, so AUR installs never take $SUDO — the helper
-# escalates internally for the pacman step.
-#
-# --noconfirm alone is NOT enough to make yay non-interactive: when a previous
-# run left files in /tmp/yay it still opens the "Packages to cleanBuild?" and
-# "Diffs to show?" menus, which block forever behind the log redirect with no
-# visible prompt. The --answer* flags pre-answer all four menus; </dev/null
-# below is the backstop, turning any prompt we haven't anticipated into an
-# immediate EOF failure rather than a hang.
-#
-# Only the two helpers detected above are handled, and that is exhaustive: $AUR
-# is set to exactly "", "yay" or "paru" and the empty case returns before the
-# case statement. A generic `*)` arm here was unreachable code pretending to
-# support helpers this script never selects.
+# AUR builds run without sudo. Helpers escalate for the package installation step.
+# Pre-answer yay's menus, since --noconfirm alone still prompts after interrupted runs.
+# stdin from /dev/null turns unexpected prompts into failures instead of hidden hangs.
 aur_install() {
   [ -n "$AUR" ] || return 1
   case "$AUR" in
@@ -334,13 +227,7 @@ aur_install() {
 # ---------------------------------------------------------------------------
 # 2b. GitHub-releases fallback (any distro)
 # ---------------------------------------------------------------------------
-# The AUR covers sesh/carapace/herdr on Arch, but nothing equivalent exists on
-# Debian or Fedora, where yazi, sesh, carapace, herdr and atuin — plus lazygit and
-# starship on Fedora — are in no repo at all. All of them publish static Linux
-# binaries on GitHub, so pull those into ~/.local/bin as a last resort before
-# giving up on a tool. neovim and fzf are here for the other reason: they ARE
-# packaged everywhere, just at versions this repo's configs cannot use (see
-# min_version), so the release becomes the source when the repo's copy is too old.
+# Use upstream releases for unpackaged tools and packages below min_version.
 gh_release_repo() {
   case "$1" in
     sesh)      echo "joshmedeski/sesh" ;;
@@ -390,12 +277,7 @@ gh_release_install() {
     *)             return 1 ;;   # no prebuilt binaries for anything else
   esac
 
-  # Status captured alongside the body in one request. A 403/429 here is rate
-  # limiting, not a missing tool, and -f collapsed the two into the same silent
-  # failure — so an exhausted quota reported eight tools as unavailable and sent
-  # you hand-installing things that would have worked an hour later. Hit while
-  # testing this script in containers: 60 requests/hour goes quickly when each
-  # run costs one per unpackaged tool.
+  # Track 403/429 responses separately so the final report explains API limits.
   local resp code body
   resp="$(gh_api_get "https://api.github.com/repos/$repo/releases/latest")" || return 1
   code="${resp##*$'\n'}"
@@ -406,32 +288,13 @@ gh_release_install() {
     *)       return 1 ;;
   esac
 
-  # Parsed with grep rather than jq: jq is itself one of the tools this may be
-  # asked to install, so it cannot be a dependency of the installer.
-  # `|| urls=""` for the same pipefail reason as CURRENT_SHELL in step 5: grep
-  # exits 1 on no match, pipefail hands that to the assignment, and the next line
-  # — which exists precisely to handle "no assets" — would never be reached. It
-  # survives today only because every caller invokes gh_release_install inside an
-  # `&&` list, which suspends errexit; that is luck, not design.
+  # Use grep because jq can be an installation target. Treat no matches as empty.
   urls="$(printf '%s' "$body" \
           | grep -o '"browser_download_url": *"[^"]*"' \
           | sed 's/.*"\(https[^"]*\)"/\1/')" || urls=""
   [ -n "$urls" ] || return 1
 
-  # Drop distro packages, installers, checksums and signatures — we want the
-  # portable archive or the bare binary, not something needing a package manager.
-  #
-  # The three extra exclusions each cost a real, silently-wrong install:
-  #   android    zoxide publishes aarch64-linux-android, and it sorts FIRST in
-  #              the release list. On aarch64 the arch filter matched it and the
-  #              catch-all pick below took it — an Android NDK binary installed
-  #              into ~/.local/bin on a Raspberry Pi.
-  #   appimage   neovim ships nvim-linux-x86_64.appimage next to the tarball.
-  #              Nothing here can unpack an AppImage (and it needs FUSE at
-  #              runtime), so it must never win over the tarball.
-  #   -server/   atuin's release carries atuin-server-* (the sync server, not the
-  #   -update    shell client) and cargo-dist's *-update self-updater helper.
-  #              Both match every other filter, and one of them sorts first.
+  # Select portable clients, excluding installers, metadata, Android, AppImages and server/updater helpers.
   _pick() {
     printf '%s\n' "$urls" \
       | grep -Ei 'linux' \
@@ -442,18 +305,8 @@ gh_release_install() {
       | grep -Ei "$1" \
       | head -1
   }
-  # Prefer glibc builds — all three supported distros are glibc — then musl,
-  # since some projects (starship for a long while) ship Linux musl builds
-  # exclusively and a static musl binary runs fine on glibc. The bare `.` pick is
-  # the last resort, for projects that encode no libc at all in the asset name
-  # (herdr-linux-x86_64, sesh_Linux_x86_64, nvim-linux-x86_64.tar.gz).
-  #
-  # The explicit unknown-linux-* steps exist because of aarch64: no aarch64 asset
-  # anywhere contains "gnu" as a bare word for some projects, so `_pick gnu` came
-  # back empty and control fell straight through to the catch-all — which is how
-  # zoxide's aarch64-linux-android asset got picked on ARM.
-  # Only the first needs `|| url=""` — the rest are already in `||` position, and
-  # _pick is a pipeline of greps whose "no match" is exit 1 (see urls above).
+  # Prefer glibc, then static musl, then assets without a libc label.
+  # Explicit target triples cover ARM assets. Treat the first missing match as empty.
   url="$(_pick 'unknown-linux-gnu')" || url=""
   [ -n "$url" ] || url="$(_pick 'gnu')"
   [ -n "$url" ] || url="$(_pick 'unknown-linux-musl')"
@@ -470,9 +323,7 @@ gh_release_install() {
     if printf '%s\n' "$urls" | grep -Fxq "$c"; then sums_url="$c"; break; fi
   done
   if [ -z "$sums_url" ]; then
-    # "no checksum manifest" is the COMMON case here (herdr, sesh), and it is
-    # spelled `grep` exit 1 — so without `|| sums_url=""` pipefail makes the
-    # normal path the failing path.
+    # Missing checksum manifests are allowed, but reported below.
     sums_url="$(printf '%s\n' "$urls" \
       | grep -Ei '(checksums?|sha256sums?|sha256\.sum)[^/]*$' \
       | grep -Eiv '\.(sig|asc|pem)$' \
@@ -485,13 +336,7 @@ gh_release_install() {
     return 1
   fi
 
-  # Nothing verified these downloads before: whatever came back from the network
-  # was installed into ~/.local/bin as an executable and, for herdr and carapace,
-  # sourced into every interactive shell. Where upstream publishes a sum we now
-  # insist on it and refuse to install on a mismatch. Where it publishes none
-  # (herdr, sesh) we install anyway but record it in $UNVERIFIED, which is
-  # reported at the end — refusing outright would leave .zshrc's hard dependency
-  # without agent workspaces, which is worse than a warned-about download.
+  # Reject checksum mismatches. If verification is unavailable, install and report UNVERIFIED.
   if [ -z "$sums_url" ]; then
     UNVERIFIED+=("$tool — $repo publishes no checksum for $asset")
   elif ! command -v sha256sum >/dev/null 2>&1; then
@@ -504,11 +349,7 @@ gh_release_install() {
     if [ "$(wc -w < "$tmp/sums")" -le 1 ]; then
       want="$(tr -d '[:space:]' < "$tmp/sums")"
     else
-      # Matched on the filename FIELD, not as a substring of the line: a manifest
-      # listing nvim-linux-x86_64.tar.gz.sha256sum above the tarball itself would
-      # otherwise return the hash of the wrong file and fail a download that was
-      # perfectly good. The subs strip sha256sum's binary-mode "*" marker and any
-      # leading path.
+      # Match the exact filename field, stripping binary-mode markers and directory prefixes.
       want="$(awk -v a="$asset" \
         '{ n = $NF; sub(/^\*/, "", n); sub(/.*\//, "", n); if (n == a) { print $1; exit } }' \
         "$tmp/sums")"
@@ -532,12 +373,7 @@ gh_release_install() {
     *.tar.xz)       tar -xJf "$tmp/asset" -C "$tmp" 2>/dev/null ;;
     *.tar.bz2)      tar -xjf "$tmp/asset" -C "$tmp" 2>/dev/null ;;
     *.zip)
-      # yazi's release is the only .zip in the set, and this used to be a plain
-      # `unzip … 2>/dev/null` with no guard: on a minimal image, where unzip is
-      # itself one of the tools being installed, the command did not exist, the
-      # error went to /dev/null and yazi was reported unavailable even though the
-      # download had succeeded. unzip now comes earlier in the install loop, and
-      # this says so out loud if it somehow still isn't there.
+      # Report a missing extractor instead of hiding the failure in redirected output.
       if ! command -v unzip >/dev/null 2>&1; then
         echo "!! $tool: cannot extract $asset — unzip is not installed" >&2
         rm -rf "$tmp"
@@ -548,32 +384,13 @@ gh_release_install() {
   esac
 
   if [ "$tool" = neovim ]; then
-    # neovim is the one release here that is NOT a self-contained binary: bin/nvim
-    # locates its runtime relative to its own path ($prefix/share/nvim/runtime),
-    # so lifting just the executable out of the tarball produces an nvim that
-    # starts and then fails on everything builtin. Keep the extracted tree whole
-    # under ~/.local/opt and put a symlink on PATH.
+    # Keep Neovim's whole tree, since bin/nvim locates its runtime relative to itself.
     f="$(find "$tmp" -type f -path '*/bin/nvim' -print -quit 2>/dev/null)" || f=""
     if [ -n "$f" ]; then
       root="$(dirname "$(dirname "$f")")"
       mkdir -p "$HOME/.local/opt"
-      # cp+rm instead of mv: mv fails with EXDEV when /tmp and $HOME are on
-      # different filesystems (tmpfs /tmp + separate /home volume). Under set -e
-      # that aborts the whole script; cp crosses filesystem boundaries safely.
-      #
-      # Stage into nvim.new and swap, rather than rm -rf'ing the live tree first.
-      # The old order destroyed the working editor BEFORE it knew the replacement
-      # would land, then set rc=0 and symlinked unconditionally — so a cp that ran
-      # out of space (exactly the separate-/home-volume setup this cp exists for)
-      # left no nvim, a dangling ~/.local/bin/nvim, and a reported success. Both
-      # paths are under $HOME/.local/opt, so the mv is same-filesystem: no EXDEV,
-      # and the window in which nvim does not exist is one rename long.
-      #
-      # rc is set only by the full chain completing; the else arm removes the
-      # staging tree so a retry doesn't inherit a half-copy.
-      # A leftover nvim.new from an interrupted run must go first: `cp -r src dst`
-      # copies INTO dst when dst is an existing directory, which would nest the
-      # tree one level deeper and make bin/nvim unreachable at the expected path.
+      # Copy across filesystems before replacing the working editor. Rename within ~/.local/opt.
+      # Clear stale staging to avoid nested copies. Report success only after linking completes.
       rm -rf "$HOME/.local/opt/nvim.new"
       if cp -r "$root" "$HOME/.local/opt/nvim.new" \
          && rm -rf "$HOME/.local/opt/nvim" \
@@ -598,10 +415,6 @@ gh_release_install() {
         rc=1
       fi
     done
-# Containers (Docker: /.dockerenv, Podman: /run/.containerenv) have no display:
-# the host terminal renders ghostty and the font, so steps 6 and 7 skip them.
-IN_CONTAINER=""
-if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then IN_CONTAINER=1; fi
   fi
   rm -rf "$tmp"
   return "$rc"
@@ -629,9 +442,7 @@ tool_version() {
   bin="$(bin_name "$1")"
   command -v "$bin" >/dev/null 2>&1 || return 1
   out="$("$bin" --version 2>/dev/null | head -1)" || return 1
-  # `|| out=""`: a --version line carrying no dotted number makes grep exit 1, and
-  # pipefail would turn "unparseable version" into a script-killing error instead
-  # of the `return 1` the next line intends (tool_ok treats that as "don't block").
+  # Treat an unparseable version as empty instead of triggering errexit.
   out="$(printf '%s\n' "$out" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)" || out=""
   [ -n "$out" ] || return 1
   printf '%s\n' "$out"
@@ -660,10 +471,7 @@ version_ge() {
 # name we accept, AND new enough to be worth reporting as installed?
 tool_ok() {
   local tool="$1" floor ver
-  # bash caches command→path lookups, and this is called immediately after a
-  # release install drops a NEWER copy into ~/.local/bin. Without clearing the
-  # table, `command -v nvim` and `nvim --version` keep answering for the /usr/bin
-  # build we just replaced, and the version floor below never lets go.
+  # Clear cached paths so newly installed releases take precedence over distro binaries.
   hash -r 2>/dev/null || true
   have_tool "$tool" || return 1
   floor="$(min_version "$tool")"
@@ -688,10 +496,7 @@ install_tool() {
     return 0
   fi
 
-  # A tool that is installed but BELOW its floor must skip the package manager:
-  # the repo has nothing newer, `apt-get install` would report "already the newest
-  # version", exit 0, and we would print a ✓ for the very binary we just rejected.
-  # Go straight to the upstream release instead.
+  # Skip package-manager retries for installed versions below the required minimum.
   if [ -n "$floor" ] && command -v "$bin" >/dev/null 2>&1; then
     if { echo "### GitHub releases: $tool ($(tool_version "$tool" || echo '?') < $floor)"
          gh_release_install "$tool"; } >>"$LOG" 2>&1 && tool_ok "$tool"; then
@@ -699,22 +504,13 @@ install_tool() {
     else
       echo "✗ $(tool_version "$tool" || echo 'installed version') is older than the required $floor"
       MISSING+=("$tool")
-      # FAILED_PKGS, not just MISSING, because this is the one failure mode
-      # verify_install cannot see for itself: the binary IS present, so have_tool
-      # says yes and the tool loop prints nothing. MISSING[] is only ever printed
-      # (see the manual-install list below), never folded into an exit status —
-      # so without this a Debian box whose nvim is too old for nvim/lazy-lock.json
-      # reached "✓ all checks passed", exit 0, and the login-shell switch.
+      # Record unusable versions as fatal, since verify_install only detects binary presence.
       FAILED_PKGS+=" $tool"
     fi
     return 0
   fi
 
-  # Every arm re-checks with tool_ok rather than trusting the package manager's
-  # exit status: apt happily exits 0 for a package that installs no binary we can
-  # find (see tool_bins on ImageMagick 6), and pm_install cannot know about a
-  # version floor. $pkg is deliberately unquoted — pkg_name may return two
-  # packages (ncurses on apt) and both have to reach the PM as separate arguments.
+  # Require a usable binary after each install. Split pkg_name's multi-package results deliberately.
   # shellcheck disable=SC2086  # deliberate word splitting of the package list
   if { echo "### $PM: $tool ($pkg)"; pm_install $pkg; } >>"$LOG" 2>&1 && tool_ok "$tool"; then
     echo "✓ $pkg$(tool_note "$tool")"
@@ -724,41 +520,15 @@ install_tool() {
     echo "✓ $(gh_release_repo "$tool") (GitHub release → ~/.local/bin)"
   else
     echo "✗ not available"
-    # Deliberately MISSING only, no FAILED_PKGS. Every tool that reaches this arm
-    # is already visible to verify_install under the right severity: the
-    # load-bearing ones (zsh, stow, neovim, herdr, jq, …) are in its fatal binary
-    # loop, and the optional ones (ffmpeg/sevenzip/poppler/imagemagick, shellcheck)
-    # are in its warn-only loops on purpose. Forcing them all into FAILED_PKGS
-    # would make them uniformly fatal and break a documented-good outcome: Fedora
-    # cannot install sevenzip without RPM Fusion (see pkg_name), so every Fedora
-    # run — which the header records as passing end-to-end — would start reporting
-    # INCOMPLETE and refusing to switch the login shell over a yazi archive
-    # preview. The two failures verify_install genuinely cannot see are ghostty
-    # and the Nerd Font, and those append to FAILED_PKGS at their own steps below.
+    # Let verify_install assign severity. Optional missing tools must not become fatal here.
+    # Ghostty and font failures need separate accounting because its binary loops omit them.
     MISSING+=("$tool")
   fi
 }
 
-# ORDER MATTERS in the first line: git, curl and unzip are what the later entries
-# are installed WITH (TPM clone, the mise installer, and every archive
-# the GitHub-release fallback unpacks). unzip used to sit eight entries after yazi,
-# whose release asset is the only .zip in the set — so on a minimal image yazi's
-# download succeeded, the extraction found no unzip, its error went to /dev/null
-# and yazi was reported unavailable for no visible reason.
-#
-# zsh is NOT optional and was the omission that made a fresh install look like it
-# had done nothing: every config here is zsh-side, so without it (and without the
-# chsh in step 10) you land back in bash and none of this is ever loaded.
-# Worktrunk is the shell's Git worktree manager (its binary is `wt`). Herdr and
-# jq are installed for agent workspaces and JSON queries, not shell helpers.
-# wl-clipboard and xclip are the Linux side of something macOS gets for free via
-# pbcopy, which is exactly why their absence went unnoticed: tmux-yank
-# (tmux.conf) and the yank-to-"+ keymaps (nvim/lua/config/keymaps.lua) both need
-# an external clipboard provider, and cheatsheet.md documents them as working.
-# Both are packaged on all three PMs; installing both covers Wayland and X11
-# without having to guess which session type this machine boots into.
-# The last four are yazi's preview backends (video / archive / PDF / HEIC-JXL),
-# and were only in install.sh — every Linux rebuild came up without previews.
+# Install git, curl and unzip before tools that need downloads or extraction.
+# zsh is required. Install both clipboard providers to cover Wayland and X11.
+# The last four tools provide yazi previews.
 echo "==> Installing tools (best-effort; details in $LOG)"
 for tool in \
   git curl unzip zsh tmux stow neovim ripgrep fzf zoxide bat fd \
@@ -790,23 +560,9 @@ fi
 # installer only when the loop above couldn't get it.
 if ! command -v mise >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/mise" ]; then
   echo "==> Installing mise via its own installer"
-  # Security note: this is the one tool not installed via gh_release_install.
-  # mise publishes single-binary releases on GitHub (jdx/mise), but the distro
-  # packages cover Arch and the fallback path here handles the rest; converting
-  # to gh_release_install would require adding mise to gh_release_repo() and
-  # gh_release_bins(). For now the install is tracked in UNVERIFIED[] — pushed
-  # inside the success branch below, not here. It used to be recorded before the
-  # curl ran, so a failed download produced a closing report that said "✗ mise"
-  # and "installed WITHOUT checksum verification: mise" at the same time. The
-  # UNVERIFIED list is a statement about what is now on PATH; nothing that failed
-  # to install belongs in it.
+  # This fallback has no checksum step. Record it as UNVERIFIED only after success.
   if curl -fsSL https://mise.run | sh >>"$LOG" 2>&1; then
-    # Rebuilt element by element, because the old MISSING=("${MISSING[@]/mise}")
-    # did NOT remove anything: ${arr[@]/pat} is a substitution, so it replaced
-    # "mise" with the empty string and left the element in place. The array kept
-    # its length, ${#MISSING[@]} stayed ≥ 1, and the "install these manually"
-    # header printed with nothing under it — the awk NF filter that renders the
-    # list swallowed the now-blank entry.
+    # Remove mise entirely rather than leaving an empty array element.
     _kept=()
     for _m in ${MISSING[@]+"${MISSING[@]}"}; do
       [ "$_m" = mise ] || _kept+=("$_m")
@@ -823,25 +579,12 @@ fi
 # ---------------------------------------------------------------------------
 # 5. Decide about the login shell (the switch itself happens at the very end)
 # ---------------------------------------------------------------------------
-# Making zsh the login shell is the step whose absence caused "I installed it and
-# nothing happened": the repo stows .zshrc/.zshenv/.zprofile, but a distro default
-# account is on bash, so none of them are ever read.
-#
-# Only the DECISION is made here, because the switch has to come after the stow
-# step — see step 10. All this does is work out whether there is anything to do,
-# and set NEXT_STEP_FIRST so the closing message mentions the re-login.
+# Decide whether to change the login shell now, but switch only after successful setup.
 ZSH_PATH=""
 CURRENT_SHELL=""
 if command -v zsh >/dev/null 2>&1; then
   ZSH_PATH="$(command -v zsh)"
-  # `|| CURRENT_SHELL=""` is load-bearing, and its absence was fatal. This is a
-  # simple command whose status is the substitution's, and `pipefail` makes that
-  # the pipeline's — so it inherits getent's: 2 when the key is not in NSS, 127
-  # when getent isn't installed at all. Under `set -e` the script then died right
-  # here, at step 5 — AFTER the whole package loop and BEFORE the stow step. A
-  # container with a UID that maps to no passwd entry therefore installed ~30
-  # tools and stowed nothing, which is the one outcome this script exists to
-  # avoid. Empty is already handled: everything below reads ${CURRENT_SHELL:-unknown}.
+  # Missing getent or passwd entries leave the shell unknown instead of aborting setup.
   CURRENT_SHELL="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)" || CURRENT_SHELL=""
   if [ "$CURRENT_SHELL" = "$ZSH_PATH" ]; then
     echo "==> Login shell already zsh"
@@ -855,6 +598,10 @@ fi
 # 6. ghostty — official on some PMs, community/snap on others
 # ---------------------------------------------------------------------------
 # (https://ghostty.org/docs/install/binary#linux)
+# Containers (Docker: /.dockerenv, Podman: /run/.containerenv) have no display:
+# the host terminal renders ghostty and the font, so steps 6 and 7 skip them.
+IN_CONTAINER=""
+if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then IN_CONTAINER=1; fi
 echo "==> Installing ghostty"
 if [ -z "$IN_CONTAINER" ] && ! command -v ghostty >/dev/null 2>&1; then
   case "$PM" in
@@ -874,13 +621,7 @@ if [ -n "$IN_CONTAINER" ]; then
 elif command -v ghostty >/dev/null 2>&1; then
   echo "   ✓ ghostty"
 else
-  # verify_install has no check of its own for ghostty — the binary is in none of
-  # its tool loops, and ~/.config/ghostty/config being a repo symlink says nothing
-  # about whether a terminal exists to read it. So this ✗ was the only trace of the
-  # failure anywhere, the run still finished "✓ all checks passed" / exit 0, and
-  # INSTALL_RC=0 let step 10 switch the login shell. Record it where the exit
-  # status is computed. (install.sh has recorded its ghostty cask failure this way
-  # all along; this is the Linux half catching up.)
+  # Record the failure because verify_install does not test Ghostty's binary.
   FAILED_PKGS+=" ghostty"
   echo "   ✗ ghostty — no direct package for $PM. Options:"
   case "$PM" in
@@ -894,9 +635,7 @@ fi
 # ---------------------------------------------------------------------------
 # 7. Nerd Font
 # ---------------------------------------------------------------------------
-# Packaged on Arch; everywhere else pull the release zip into ~/.local/share/fonts.
-# This used to be printed as a manual step, so a fresh machine came up with a
-# broken prompt (starship + the tmux/yazi themes are all glyph-dependent).
+# Use Arch's package or download the release zip into ~/.local/share/fonts for theme glyphs.
 echo "==> Installing JetBrainsMono Nerd Font"
 if [ -n "$IN_CONTAINER" ]; then
   echo "   - skipped in a container"
@@ -913,18 +652,12 @@ elif command -v curl >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1; then
   then
     rm -f "$_fontdir/JetBrainsMono.zip"
     fc-cache -f >>"$LOG" 2>&1 || true
-    # The /releases/latest/download/ redirect carries no version number, so
-    # there is no portable way to locate the matching SHA256SUMS without a
-    # separate API call. Recorded here for transparency — consistent with how
-    # gh_release_install handles tools whose upstream publishes no sum.
+    # This latest-release download skips checksum verification, so report it explicitly.
     UNVERIFIED+=("JetBrainsMono Nerd Font — ryanoasis/nerd-fonts publishes SHA256SUMS but this download uses the /releases/latest/download/ redirect without a checksum step")
     echo "   ✓ installed to $_fontdir"
   else
     rm -f "$_fontdir/JetBrainsMono.zip"
-    # A font has no binary for verify_install to look for — this is the exact case
-    # install.sh:128 documents on the macOS side, where an absent nerd font still
-    # ended in "✓ all checks passed" while the prompt, tmux status line and yazi UI
-    # were full of tofu. Same accounting here.
+    # Record the failure because fonts have no binary for verify_install to detect.
     FAILED_PKGS+=" font-jetbrains-mono-nerd-font"
     echo "   ✗ download failed — see $LOG"
   fi
@@ -941,10 +674,7 @@ hint() {
     starship)  echo "curl -sS https://starship.rs/install.sh | sh" ;;
     atuin)     echo "curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh" ;;
     zoxide)    echo "curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh" ;;
-    # Upstream folded the split crates into one: yazi-fm/yazi-cli stopped at
-    # 26.5.6 while yazi-build is on 26.5.9, so the old two-crate recipe now
-    # installs a stale yazi. --force because it overwrites whatever the earlier
-    # split-crate recipe left in ~/.cargo/bin.
+    # yazi-build replaces the retired split crates. --force overwrites their installed binaries.
     yazi)      echo "cargo install --force yazi-build   (or GitHub releases)" ;;
     sesh)      echo "mise use -g go@latest && go install github.com/joshmedeski/sesh/v2@latest" ;;
     carapace)  echo "GitHub releases: https://github.com/carapace-sh/carapace-bin/releases" ;;
@@ -954,20 +684,12 @@ hint() {
     lazygit)   echo "go install github.com/jesseduffield/lazygit@latest   (or GitHub releases)" ;;
     git-delta) echo "cargo install git-delta   (or GitHub releases: dandavison/delta)" ;;
     gh)        echo "GitHub's repo: https://github.com/cli/cli/blob/trunk/docs/install_linux.md" ;;
-    # Reachable at last: install_tool now checks nvim's version, not just its
-    # existence, so a distro build below the LazyVim floor lands here instead of
-    # printing a ✓. Every apt release ships one (Debian 12: 0.7.2, Ubuntu 24.04:
-    # 0.9.5), and nvim/ cannot load on any of them.
     neovim)    echo "REQUIRED >= 0.11.2 by nvim/lazy-lock.json — GitHub releases (neovim/neovim)" ;;
     # Same story: .zshrc sources `fzf --zsh` (0.48+) and sets --color=selected-bg
     # (0.42+); Ubuntu 22.04's 0.29 makes every fzf call in the shell fail.
     fzf)       echo "REQUIRED >= 0.48 by .zshrc's 'fzf --zsh' — GitHub releases: junegunn/fzf" ;;
     zsh)       echo "REQUIRED — none of these dotfiles load without it" ;;
-    # The one tool whose absence makes this entire script pointless — no stow, no
-    # symlinks, nothing in ~/.config comes from the repo — and it had no case here,
-    # so it fell through to a bare "install manually". It is also the likeliest
-    # entry in this list on a RHEL-like: stow is EPEL-only there (see the EPEL step
-    # at the top), so a box where epel-release failed lands exactly here.
+    # RHEL derivatives need EPEL to install stow.
     stow)      echo "REQUIRED — nothing is symlinked without it. RHEL/Rocky/Alma: sudo dnf install epel-release && sudo dnf install stow" ;;
     mise)      echo "curl https://mise.run | sh" ;;
     sevenzip)  echo "yazi archive previews only" ;;
@@ -1005,11 +727,7 @@ if [ ${#MISSING[@]} -gt 0 ]; then
   done
 fi
 
-# Reported on the terminal, not just in $LOG: an unverified download is a thing
-# the person running this is entitled to know about, and every one of these ends
-# up as an executable on PATH (herdr and carapace are additionally sourced by
-# every interactive shell). A mismatching checksum is not listed here — that
-# refuses to install and shows up as a ✗ above.
+# Show unverified downloads on the terminal. Mismatches are rejected and reported as failures instead.
 if [ ${#UNVERIFIED[@]} -gt 0 ]; then
   echo ""
   echo "!! Installed WITHOUT checksum verification:"
@@ -1019,15 +737,12 @@ fi
 # ---------------------------------------------------------------------------
 # 8b. Optional per-machine install steps
 # ---------------------------------------------------------------------------
-# An untracked install.local.sh next to this script (gitignored + stowignored) is
-# sourced here if present — extra packages, embedded toolchains, etc. — so this
-# tracked script stays portable.
+# Optional machine-specific steps live in the ignored install.local.sh.
 if [ -f "$DOTFILES/install.local.sh" ]; then
   echo ""
   echo "==> Running install.local.sh (machine-specific)"
   # shellcheck source=/dev/null
-  # || true: failures inside install.local.sh must not abort before finish_install
-  # runs — without this, set -e would skip stow, terminfo, TPM, and verify_install.
+  # Continue to shared steps and verification even if local installation fails.
   source "$DOTFILES/install.local.sh" || true
 fi
 
@@ -1042,15 +757,7 @@ finish_install || INSTALL_RC=1
 # ---------------------------------------------------------------------------
 # 10. Make zsh the login shell — deliberately the LAST thing this script does
 # ---------------------------------------------------------------------------
-# This used to run before the stow step, and that ordering was actively harmful:
-# stow failing anywhere (a conflict it couldn't resolve, a read-only ~/.config)
-# takes the script down through `set -e` with the login shell ALREADY switched, so
-# the next login started zsh with nothing stowed — which drops you into zsh's
-# zsh-newuser-install wizard instead of a shell, with no .zshrc to explain why.
-# Bash with unstowed configs is a recoverable state; that is not.
-#
-# So: only switch once finish_install has confirmed the configs are actually in
-# place, and if it hasn't, say plainly that the shell was left alone.
+# Switch only after successful verification so the next login has working zsh configuration.
 if [ -n "$ZSH_PATH" ] && [ "$INSTALL_RC" -eq 0 ]; then
   # chsh only accepts shells listed in /etc/shells.
   # Failing to append here is not fatal (chsh below reports it), so never let
@@ -1061,10 +768,7 @@ if [ -n "$ZSH_PATH" ] && [ "$INSTALL_RC" -eq 0 ]; then
   echo ""
   if [ -t 0 ]; then
     printf '==> Change login shell from %s to %s? [Y/n] ' "${CURRENT_SHELL:-unknown}" "$ZSH_PATH"
-    # `|| _reply=n` — read exits non-zero on EOF, and as a bare simple command
-    # under `set -e` that killed the script with status 1 at the very last step of
-    # an otherwise perfect install. Ctrl-D at this prompt is a plain "no", not an
-    # error: treat it as declining the shell change and let the script exit 0.
+    # Treat EOF as declining the shell change, not an installation failure.
     read -r _reply || _reply=n
     case "${_reply:-y}" in
       [Nn]*) echo "   skipped — run 'chsh -s $ZSH_PATH' when ready" ;;

@@ -1,21 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Resolve the repo from this script's own location, so the bootstrap works from a
-# clone anywhere — not just ~/dotfiles.
+# Resolve the repo from this script, regardless of the clone location.
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# This script is macOS/Homebrew-only. On Linux, hand off to the native-package-
-# manager bootstrap so nobody accidentally installs Homebrew-on-Linux.
+# Keep Homebrew installation limited to macOS.
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "install.sh is for macOS. On Linux, run ./install.linux.sh instead." >&2
   exit 1
 fi
 
-# Everything after the package step (stow, herdr, terminfo, TPM,
-# sesh file, verification) is identical on both platforms and lives here, run by
-# finish_install at the bottom. Sourced before anything touches $HOME: it runs
-# the refuse-to-run-as-root check at source time and derives $BACKUP from $HOME.
+# Source shared steps before touching $HOME so the root guard runs first.
 # shellcheck source=install.common.sh
 source "$DOTFILES/install.common.sh"
 
@@ -24,10 +19,7 @@ if ! command -v brew &>/dev/null; then
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
 
-# The installer does not put brew on PATH for the *current* shell, and on Apple
-# Silicon /opt/homebrew/bin isn't on the default PATH at all — so the very next
-# `brew install` would die with "command not found" on a fresh Mac. Load the
-# environment explicitly, trying both prefixes.
+# Load Homebrew into the current shell, trying both installation prefixes.
 if ! command -v brew &>/dev/null; then
   for _brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
     [ -x "$_brew" ] && { eval "$("$_brew" shellenv)"; break; }
@@ -38,23 +30,9 @@ command -v brew &>/dev/null || { echo "install.sh: brew not found after install"
 
 echo "==> Installing packages"
 
-# An array rather than one long `brew install` line, so the failure path below can
-# retry the formulae one at a time and name the one that broke.
-#
-# jq is useful for querying JSON output from CLIs such as herdr and Worktrunk.
-#
-# The last four are yazi's preview backends, previously left to install.local.sh
-# and therefore absent from every rebuild:
-#   ffmpeg       → video thumbnails/preview
-#   sevenzip     → archive previews
-#   poppler      → PDF preview
-#   imagemagick  → AVIF/HEIC/JXL image support
-# Install the plain formulae, not the `-full` variants: those pull ~85 extra
-# transitive deps (whisper-cpp, tesseract, vulkan-*, ghostscript) for previews
-# that work fine without them.
-#
-# Machine-specific toolchains (embedded: arm-none-eabi-gdb, clang-format; JDKs;
-# anything else) belong in install.local.sh, sourced at the bottom.
+# Keep an array so failed installs can retry each formula separately.
+# The last four provide yazi previews. Plain variants avoid unnecessary dependencies.
+# Machine-specific toolchains belong in install.local.sh.
 _formulae=(
   neovim
   tmux
@@ -83,23 +61,8 @@ _formulae=(
   imagemagick
 )
 
-# Formulae, deliberately NOT on the fatal path — for exactly the reason spelled
-# out for the casks below.
-#
-# This was a single unguarded `brew install`, so any one formula failing (a bottle
-# download blip, a source build that hasn't caught up with a just-released macOS —
-# most likely on the four heavyweight preview backends at the end) took the whole
-# script down at this line under `set -e`: nothing stowed, no terminfo, no TPM, no
-# sesh.local.toml, no verification, and not even an error banner. The run simply
-# ended. The config half of the bootstrap does not depend on any of these being
-# present, so it gets to run regardless.
-#
-# The retry loop is not just for the error message: brew stops at the first
-# formula it cannot install, so a failure in the middle of the list means the rest
-# were never even attempted. Installing them individually picks those up. A
-# formula whose binary is present afterwards is not recorded — brew exits non-zero
-# for harmless reasons too (an already-installed keg it won't relink, say), and a
-# working tool must not be reported as missing.
+# Homebrew stops at the first failure. Retry every formula and continue to stow.
+# Record only tools that remain missing, since a non-zero exit can leave a usable binary.
 if ! brew install "${_formulae[@]}"; then
   echo "!! 'brew install' did not complete — retrying formula by formula to find out what failed." >&2
   for _formula in "${_formulae[@]}"; do
@@ -126,8 +89,7 @@ unset _cask
 if [ -f "$DOTFILES/install.local.sh" ]; then
   echo "==> Running install.local.sh (machine-specific)"
   # shellcheck source=/dev/null
-  # || true: failures inside install.local.sh must not abort before finish_install
-  # runs — without this, set -e would skip stow, terminfo, TPM, and verify_install.
+  # Continue to shared steps and verification even if local installation fails.
   source "$DOTFILES/install.local.sh" || true
 fi
 
