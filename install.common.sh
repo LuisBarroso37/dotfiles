@@ -16,7 +16,7 @@
 if [ "$(id -u)" -eq 0 ] && [ -z "${DOTFILES_ALLOW_ROOT:-}" ]; then
   _self="$(basename -- "${0:-install.sh}")"
   echo "!! Do not run this script with sudo or as root." >&2
-  echo "   \$HOME would be $HOME, so stow, terminfo and the backup directory" >&2
+  echo "   \$HOME would be $HOME, so chezmoi, terminfo and the backup directory" >&2
   echo "   would all target the wrong account." >&2
   echo "" >&2
   echo "   Run it as your normal user instead:" >&2
@@ -29,7 +29,7 @@ if [ "$(id -u)" -eq 0 ] && [ -z "${DOTFILES_ALLOW_ROOT:-}" ]; then
   return 1
 fi
 
-# Where anything stow refuses to overwrite gets moved instead of clobbered.
+# Where anything chezmoi would overwrite gets moved instead of clobbered.
 # Derived from $HOME, so it must come after the root check above.
 : "${BACKUP:=$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)}"
 
@@ -76,96 +76,40 @@ have_tool() {
   return 1
 }
 
-# Move conflicting target files into $BACKUP and retry, using Stow's conflict report.
-stow_with_backup() {
-  local target="$1"; shift
-  local out conflicts rel
-  for _ in 1 2 3; do
-    if out="$(stow --restow --target="$target" "$@" 2>&1)"; then
-      [ -n "$out" ] && printf '%s\n' "$out"
-      return 0
-    fi
-    # Extract targets from Stow's starred conflict lines, including directory mismatches.
-    # The first match wins. Strip "=> destination" and ignore source-only conflicts.
-    conflicts="$(printf '%s\n' "$out" | sed -n -E '
-/^ *\* /!d
-s/^ *\* existing target is[^:]*: *//
-t strip
-s/^ *\* cannot stow .* over existing target (.*) since .*$/\1/
-t strip
-s/^ *\* cannot stow .* over existing (non-)?directory target (.*)$/\2/
-t strip
-s/^ *\* cannot stow .* over existing target (.*)$/\1/
-t strip
-d
-:strip
-s/ => .*$//
-p
-')" || conflicts=""
-    if [ -z "$conflicts" ]; then
-      printf '%s\n' "$out" >&2
-      return 1
-    fi
-    while IFS= read -r rel; do
-      [ -n "$rel" ] || continue
-      [ -e "$target/$rel" ] || [ -L "$target/$rel" ] || continue
-      mkdir -p "$BACKUP/$(dirname "$rel")"
-      mv "$target/$rel" "$BACKUP/$rel"
-      echo "   ↳ backed up $target/$rel → $BACKUP/$rel"
-    done <<< "$conflicts"
-  done
-  echo "!! stow still reports conflicts after 3 attempts" >&2
-  return 1
+# Move every existing target that `chezmoi apply` would change into $BACKUP, then
+# apply. Old Stow symlinks show up as changes too, so a Stow machine migrates here.
+chezmoi_with_backup() {
+  local status rel
+  status="$(chezmoi --source "$DOTFILES" status --path-style relative)" || return 1
+  # Status lines are "XY path" and sorted, so a parent moves before its children.
+  while IFS= read -r rel; do
+    rel="${rel:3}"
+    [ -n "$rel" ] || continue
+    [ -e "$HOME/$rel" ] || [ -L "$HOME/$rel" ] || continue
+    mkdir -p "$BACKUP/$(dirname "$rel")"
+    mv "$HOME/$rel" "$BACKUP/$rel"
+    echo "   ↳ backed up ~/$rel → $BACKUP/$rel"
+  done <<< "$status"
+  chezmoi --source "$DOTFILES" apply --force
 }
 
-# Everything from Stow to the sesh import file: identical on both platforms
+# Everything from chezmoi to the sesh import file: identical on both platforms
 # because it only touches this repo and $HOME.
 #
-# Returns non-zero if a step that verify_install can also see went wrong (stow),
+# Returns non-zero if a step that verify_install can also see went wrong (chezmoi),
 # so finish_install can fold it into the exit status. Steps whose failure is only
 # a degradation — a missing tmux theme, no undercurl — warn and return 0.
 run_shared_tail() {
   local rc=0
   echo ""
-  cd "$DOTFILES" || return 1
-  # Stow before cloning TPM so plugins land in the repo's ignored directory.
-  # Record stow failures, but continue so verification can report all missing links.
-  echo "==> Stowing dotfiles"
-  mkdir -p "$HOME/.config"      # stow aborts if --target from .stowrc doesn't exist
-  # Worktrunk writes approvals beside config.toml: don't fold that directory
-  # into the tracked repo when stowing a fresh home.
-  mkdir -p "$HOME/.config/worktrunk"
-  stow_with_backup "$HOME/.config" . || rc=1
-  stow_with_backup "$HOME" zsh || rc=1         # zsh dotfiles live in ~, not ~/.config
+  # Record deploy failures, but continue so verification can report everything.
+  echo "==> Applying dotfiles with chezmoi"
+  chezmoi_with_backup || rc=1
   # Private-module credentials stay in ~/.netrc and the untracked ~/.zshrc.local.
 
-  ## herdr is stowignored: it writes runtime state (logs, sockets, session.json)
-  ## into ~/.config/herdr, so that directory has to stay a real directory rather
-  ## than a stow-folded symlink into the repo. Only config.toml is linked, by hand.
-  echo "==> Linking herdr config"
-  # Unfold legacy directory links before linking config.toml to avoid a self-link.
-  if [ -L "$HOME/.config/herdr" ]; then
-    rm -f "$HOME/.config/herdr"
-    echo "   ↳ unfolded stow symlink at ~/.config/herdr into a real directory"
-  fi
-  # Remove the legacy ~/.config/config.toml only if it is a symlink into this repo.
-  # Preserve other tools' files. The correct link is ~/.config/herdr/config.toml.
-  if [ -L "$HOME/.config/config.toml" ]; then
-    local stale
-    stale="$(readlink -f "$HOME/.config/config.toml" 2>/dev/null)" || stale=""
-    case "$stale" in
-      "$DOTFILES"/*)
-        rm -f "$HOME/.config/config.toml"
-        echo "   ↳ removed stale stow leftover at ~/.config/config.toml (→ $stale)"
-        ;;
-    esac
-  fi
-  mkdir -p "$HOME/.config/herdr"
-  ln -sfn "$DOTFILES/herdr/config.toml" "$HOME/.config/herdr/config.toml"
-
-  ## terminfo/ is stowignored: these are compiled into ~/.terminfo, not symlinked.
+  ## terminfo/ sits outside home/, so chezmoi does not deploy it: it is compiled into ~/.terminfo.
   ## Adds an xterm-256color variant carrying Smulx/Setulc so neovim emits undercurl
-  ## inside herdr panes (see the TERM swap in zsh/.zshrc).
+  ## inside herdr panes (see the TERM swap in home/dot_zshrc).
   echo "==> Compiling terminfo entries"
   if command -v tic >/dev/null 2>&1; then
     for ti in "$DOTFILES"/terminfo/*.terminfo; do
@@ -184,22 +128,6 @@ run_shared_tail() {
       || echo "   ! TPM clone failed (offline?) — prefix+I will not work until it is installed"
   else
     echo "   ✓ already present"
-  fi
-  # Older clones had Catppuccin at this same path as a Git submodule. TPM sees
-  # the directory as "already installed" and would never honor the new release
-  # pin. Only remove a clean submodule belonging to this repo; preserve local
-  # edits and unknown directories for manual review.
-  local catpath="$HOME/.config/tmux/plugins/tmux" cat_status
-  if [ -f "$catpath/.git" ]; then
-    cat_status="$(git -C "$catpath" status --porcelain 2>/dev/null)" || cat_status=unknown
-    if [ "$(readlink -f "$catpath" 2>/dev/null)" = "$DOTFILES/tmux/plugins/tmux" ] \
-       && [ -z "$cat_status" ]; then
-      rm -rf "$catpath"
-      echo "   ↳ removed clean, retired Catppuccin submodule for TPM to reinstall"
-    else
-      echo "   ! old Catppuccin submodule has local changes or is not from this repo; migrate it manually" >&2
-      rc=1
-    fi
   fi
   # Install plugins on a fresh machine, including the theme.
   if [ -x "$HOME/.config/tmux/plugins/tpm/bin/install_plugins" ]; then
@@ -220,9 +148,9 @@ run_shared_tail() {
 verify_install() {
   echo ""
   echo "==> Verifying"
-  local _fail=0 tool pkg l real
+  local _fail=0 tool pkg
 
-  for tool in zsh tmux stow neovim ripgrep fzf zoxide bat fd gh lazygit \
+  for tool in zsh tmux chezmoi neovim ripgrep fzf zoxide bat fd gh lazygit \
               git-delta starship atuin yazi carapace sesh herdr worktrunk mise jq; do
     have_tool "$tool" || { echo "   ✗ missing binary: $(bin_name "$tool") ($tool)"; _fail=1; }
   done
@@ -240,20 +168,10 @@ verify_install() {
     echo "   ✗ package missing or unusable: $pkg"; _fail=1
   done
 
-  # Resolve representative files, since Stow can link either directories or individual files.
-  for l in "$HOME/.zshrc" "$HOME/.zshenv" "$HOME/.zprofile" \
-           "$HOME/.config/nvim/init.lua" "$HOME/.config/tmux/tmux.conf" \
-           "$HOME/.config/sesh/sesh.toml" "$HOME/.config/starship.toml" \
-           "$HOME/.config/atuin/config.toml" "$HOME/.config/git/config" \
-           "$HOME/.config/lazygit/config.yml" "$HOME/.config/yazi/theme.toml" \
-           "$HOME/.config/ghostty/config" "$HOME/.config/herdr/config.toml" \
-           "$HOME/.config/worktrunk/config.toml"; do
-    if [ -e "$l" ] && real="$(readlink -f "$l" 2>/dev/null)" \
-       && case "$real" in "$DOTFILES"/*) true ;; *) false ;; esac; then
-      continue
-    fi
-    echo "   ✗ config not loaded from the repo: $l"; _fail=1
-  done
+  # chezmoi verify covers every managed file, so a newly added config needs no entry here.
+  if have_tool chezmoi && ! chezmoi --source "$DOTFILES" verify >/dev/null 2>&1; then
+    echo "   ✗ deployed config differs from the repo (see: chezmoi diff)"; _fail=1
+  fi
 
   [ -d "$HOME/.config/tmux/plugins/tpm" ] || { echo "   ✗ TPM not installed"; _fail=1; }
   [ -f "$HOME/.config/tmux/plugins/tmux/catppuccin.tmux" ] \
@@ -289,7 +207,7 @@ finish_install() {
 # Closing message. Set NEXT_STEP_FIRST beforehand to prepend a platform-specific
 # step — Linux uses it for the login-shell re-login.
 #
-# Keep machine-specific identity and includeIf rules in ~/.gitconfig, which takes precedence over the stowed Git configuration.
+# Keep machine-specific identity and includeIf rules in ~/.gitconfig, which takes precedence over the deployed Git configuration.
 print_next_steps() {
   local n=1 step
   echo ""

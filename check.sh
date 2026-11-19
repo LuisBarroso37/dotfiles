@@ -10,8 +10,6 @@
 # in a review session, not in an automated gate.
 #
 # Deliberately NOT duplicated here:
-#   * link/deploy health per stow class → the `dotfiles-doctor` skill owns that
-#     model (folded vs unfolded vs hand-wired) and it is too nuanced for a gate.
 #   * binary + config-reachability checks → install.common.sh's verify_install
 #     already does them; this script sources and calls it rather than restating
 #     it, so the two can never drift apart.
@@ -142,42 +140,9 @@ cd "$DOTFILES" || { echo "check.sh: cannot cd to $DOTFILES" >&2; exit 2; }
 BREW_PKGS="$(awk '/^_formulae=\(/{f=1;next} f&&/^\)/{exit} f{print}' install.sh \
   | sed -e 's/#.*//' -e 's/[[:space:]\\]//g' | grep -v '^$' || true)"
 
-# Where stow deploys the root package. Derived, so it cannot disagree with the
-# .stowrc the installer actually uses — and asserted below (see C3), because this
-# sed only understands one spelling. `-t ~/.config`, or a trailing comment on the
-# line, both yield an empty or nonsensical STOW_TARGET, and an empty target used
-# to sail straight through C3 printing green ticks. Every other derivation in
-# this file goes through derived_or_fail; this one now does too.
-STOW_TARGET="$(sed -n 's/^--target=//p' .stowrc | sed "s|^~|$HOME|" || true)"
-
-# What stow actually deploys, asked of stow itself: a dry run into a PRISTINE
-# empty target prints one LINK line per entry it would create.
-#
-# This is derived this way on purpose. The first version compared each top-level
-# entry against `.stowrc`'s --ignore patterns, which silently assumed .stowrc was
-# the whole ignore list. It is not: stow carries a BUILT-IN list (.git, README.*,
-# LICENSE.*, *~ and friends) that --ignore only adds to. So the moment three
-# redundant --ignore lines were correctly deleted from .stowrc, this check started
-# reporting README.md as an undeployed package. Asking stow cannot drift from
-# stow.
-#
-# No exit-status plumbing here, deliberately. This used to capture `rc=$?` after
-# the pipeline and `return $rc` — but with no `pipefail` in effect for it that was
-# sed's status, not stow's, and sed exits 0 over empty input, so the value could
-# only ever be 0. The single caller discarded it anyway. The real signal is the
-# emptiness of the output, and derived_or_fail at the call site asserts exactly
-# that. Dead plumbing that looks like a safety net is worse than none.
-stow_deploys() {
-  local probe
-  probe="$(mktemp -d)" || return 1
-  stow -n -v -d "$DOTFILES" -t "$probe" . 2>&1 \
-    | sed -n 's/^LINK: \([^ ]*\) =>.*/\1/p'
-  rmdir "$probe" 2>/dev/null || rm -rf "$probe"
-}
-
 # A derivation that silently returns nothing is worse than no check: it reports
-# a clean pass over an empty set. Both lists above are computed from files this
-# repo edits, so both can break exactly that way — and one did, when install.sh's
+# a clean pass over an empty set. The derived lists are computed from files this
+# repo edits, so they can break exactly that way — and one did, when install.sh's
 # `brew install \` block became an array and the old awk pattern matched nothing,
 # yielding a cheerful "all 0 derived formulae resolve". Assert non-empty.
 derived_or_fail() {
@@ -207,8 +172,7 @@ REMOVED_TOKENS="pyenv wtclean migrate.sh"
 # exists elsewhere can never match. `sesh.local.toml` was listed here and lives
 # at ~/.config/sesh.local.toml — outside the repo — so that entry was incapable
 # of firing and has been removed.
-MUST_NOT_TRACK="install.local.sh .DS_Store
-tmux/plugins/tpm herdr/session.json"
+MUST_NOT_TRACK="install.local.sh .DS_Store"
 
 printf '%s%s%s\n' "$C_BOLD" "check.sh — $DOTFILES @ $(git rev-parse --short HEAD 2>/dev/null || echo '?')" "$C_OFF"
 [ "$OFFLINE" -eq 1 ] && printf '%s(offline mode)%s\n' "$C_DIM" "$C_OFF"
@@ -243,7 +207,7 @@ if command -v zsh >/dev/null 2>&1; then
   # stream — every run, on a perfectly healthy config, with nothing in this repo
   # able to silence it. That is a permanent unfixable warning, i.e. exactly the
   # trained-to-ignore failure the comment above argues against. Set here rather
-  # than relying on zsh/.zshenv exporting it: the probe's job is to test the
+  # than relying on home/dot_zshenv exporting it: the probe's job is to test the
   # shell, so it must not depend on the shell it is testing to sanitise itself.
   export SHELL_SESSIONS_DISABLE=1
   pty_cmd=(zsh -i -c exit)
@@ -392,7 +356,7 @@ fi
 if command -v tmux >/dev/null 2>&1; then
   # A throwaway socket (-L) so this cannot touch live sessions. Never use
   # source-file against the default socket here.
-  tmux_out="$(tmux -f "$DOTFILES/tmux/tmux.conf" -L dotfiles_check \
+  tmux_out="$(tmux -f "$DOTFILES/home/dot_config/tmux/tmux.conf" -L dotfiles_check \
     start-server \; kill-server 2>&1)" || true
   if [ -n "$tmux_out" ]; then
     fail "tmux.conf produced messages on load"
@@ -405,113 +369,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# C3 — Stow closure
+# C3 — chezmoi closure
 # ---------------------------------------------------------------------------
-# Dry runs of the exact commands install.common.sh issues. Anything stow
-# objects to now is something the installer would have to back up and retry,
-# which means the running machine and a fresh install disagree.
+# `chezmoi status` lists every managed file whose deployed copy differs from
+# the repo. Anything listed means the running machine and a fresh install
+# disagree.
 
-criterion "C3 — stow closure"
+criterion "C3 — chezmoi closure"
 
-if grep -Eqv '^(--target=|--ignore=|[[:space:]]*$)' .stowrc; then
-  fail ".stowrc contains non-option text (Stow parses prose such as '-n' as flags)"
-else
-  ok ".stowrc contains only target/ignore options"
-fi
-
-if ! command -v stow >/dev/null 2>&1; then
-  fail "stow not installed"
-elif ! derived_or_fail "stow target (--target= in .stowrc)" "$STOW_TARGET"; then
-  : # derived_or_fail already reported it; everything below needs the target
-elif [ ! -d "$STOW_TARGET" ]; then
-  # Not `mkdir -p` any more. Creating the target to make the check pass is the
-  # check agreeing with itself: if .stowrc names a directory that does not exist,
-  # that is the finding, not a setup step.
-  fail "stow target '$STOW_TARGET' (from .stowrc) is not a directory"
-else
-  for spec in "$STOW_TARGET|." "$HOME|zsh"; do
-    tgt="${spec%%|*}"; pkg="${spec##*|}"
-    # The EXIT STATUS is the primary signal, and it used to be thrown away with
-    # `|| true` while only two substrings were matched. That made this a check
-    # that could not fail: `--target=/nonexistent-target-xyz` (stow errors and
-    # prints its usage, exit 1) and `--target=""` ("Option target requires an
-    # argument", exit 1) both reported a green ✓, and so did a package that no
-    # longer exists in the repo at all — `stow: ERROR: The stow directory … does
-    # not contain package bin` exits 2 and matches neither substring, so the
-    # deleted bin package kept passing after its deletion. Status first; the
-    # conflict grep is now only there to print the interesting lines when stow
-    # does object.
-    if out="$(stow --no --restow --target="$tgt" "$pkg" 2>&1)"; then
-      ok "stow --restow '$pkg' → $tgt predicts no conflicts"
-    else
-      rc=$?
-      fail "stow --restow '$pkg' → $tgt failed (exit $rc)"
-      conflicts="$(printf '%s\n' "$out" | grep -E 'existing target|cannot stow' || true)"
-      printf '%s\n' "${conflicts:-$out}" | head -10 | sed 's/^/      /'
-    fi
-  done
-
-  # An entry stow would deploy that is not a link back into this repo is config
-  # the user believes is deployed and is not.
-  #
-  # The weaker version of this test — `[ -e "$STOW_TARGET/$entry" ]` — proved
-  # strictly less than verify_install already had: it passes on a plain real
-  # directory containing no links whatsoever, and verify_install separately
-  # asserts a representative FILE from each of these packages resolves into
-  # $DOTFILES. What this check is FOR, and the one thing verify_install's
-  # hardcoded path list cannot do, is cover a package added to the repo that
-  # nobody remembered to add to that list. To earn that it has to assert the
-  # link, so it does.
-  #
-  # Both stow layouts are accepted, because both are correct:
-  #   FOLDED   — the target dir did not exist, so stow made ONE symlink for the
-  #              whole package (~/.config/atuin → ../dotfiles/atuin).
-  #   UNFOLDED — the target dir already existed, so stow made per-file links
-  #              inside a real directory (this is what ~/.config/herdr looks
-  #              like, deliberately, since herdr writes runtime state there).
-  # Requiring one or the other would fail on a healthy machine the first time
-  # something caused stow to unfold a package.
-  deployed="$(stow_deploys)"
-  if derived_or_fail "stow deploy set" "$deployed"; then
-    undeployed=""
-    for entry in $deployed; do
-      path="$STOW_TARGET/$entry"
-      if [ -L "$path" ]; then
-        # Folded: the entry itself is the link. It must point into the repo.
-        case "$(readlink -f "$path" 2>/dev/null)" in
-          "$DOTFILES"/*|"$DOTFILES") ;;
-          *) undeployed="$undeployed $entry(links-outside-repo)" ;;
-        esac
-      elif [ -d "$path" ]; then
-        # Unfolded: a real directory. At least one thing under it must be a link
-        # into the repo, or it is an unrelated directory that merely shares the
-        # name — the exact case the old -e test could not tell apart.
-        found=0
-        for child in "$path"/* "$path"/.[!.]*; do
-          [ -L "$child" ] || continue
-          case "$(readlink -f "$child" 2>/dev/null)" in
-            "$DOTFILES"/*) found=1; break ;;
-          esac
-        done
-        [ "$found" -eq 1 ] || undeployed="$undeployed $entry(real-dir,no-links-into-repo)"
-      elif [ -e "$path" ]; then
-        undeployed="$undeployed $entry(not-a-link)"
-      else
-        undeployed="$undeployed $entry(absent)"
-      fi
-    done
-    if [ -n "$undeployed" ]; then
-      fail "entries stow would deploy but that are not linked into the repo at $STOW_TARGET:$undeployed"
-    else
-      ok "all $(printf '%s\n' "$deployed" | grep -c .) entries stow deploys are linked into the repo at $STOW_TARGET"
-    fi
+if ! command -v chezmoi >/dev/null 2>&1; then
+  fail "chezmoi not installed"
+elif ! managed="$(chezmoi --source "$DOTFILES" managed --include files 2>&1)"; then
+  fail "chezmoi managed failed"
+  printf '%s\n' "$managed" | head -10 | sed 's/^/      /'
+elif derived_or_fail "chezmoi managed file list" "$managed"; then
+  if ! drift="$(chezmoi --source "$DOTFILES" status 2>&1)"; then
+    fail "chezmoi status failed"
+    printf '%s\n' "$drift" | head -10 | sed 's/^/      /'
+  elif [ -n "$drift" ]; then
+    fail "deployed files differ from the repo (see: chezmoi diff, then chezmoi apply or chezmoi re-add)"
+    printf '%s\n' "$drift" | head -20 | sed 's/^/      /'
+  else
+    ok "all $(printf '%s\n' "$managed" | grep -c .) managed files match the repo"
   fi
 fi
 
 # ---------------------------------------------------------------------------
 # C4 — Reference closure
 # ---------------------------------------------------------------------------
-# verify_install owns the "is every tool here, is every config linked" half.
+# verify_install owns the "is every tool here, is every config deployed" half.
 # Sourcing it means this gate cannot drift from the installer's own definition
 # of a good machine. Only verify_install is called — run_shared_tail mutates.
 
@@ -571,8 +457,8 @@ fi
 criterion "C5 — doc closure (mechanical subset)"
 
 if grep -q 'wt switch' cheatsheet.md \
-   && grep -q 'wt config shell init zsh' zsh/.zshrc \
-   && [ -f worktrunk/config.toml ]; then
+   && grep -q 'wt config shell init zsh' home/dot_zshrc \
+   && [ -f home/dot_config/worktrunk/config.toml ]; then
   ok "Worktrunk commands, config and zsh integration are documented"
 else
   fail "Worktrunk docs, config or zsh integration missing"
@@ -586,8 +472,8 @@ fi
 # with no error. Two independent audits found exactly this, in two different
 # files, so it is a recurrence worth gating rather than a one-off typo.
 herdr_prefix="$(sed -n 's/^[[:space:]]*prefix[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
-  herdr/config.toml 2>/dev/null | head -1)"
-if [ -n "$herdr_prefix" ] && [ -f tmux/tmux.conf ]; then
+  home/dot_config/herdr/config.toml 2>/dev/null | head -1)"
+if [ -n "$herdr_prefix" ] && [ -f home/dot_config/tmux/tmux.conf ]; then
   # "ctrl+a" → the human spellings a doc or comment would plausibly use.
   hp_short="C-${herdr_prefix#ctrl+}"
   hp_long="Ctrl+${herdr_prefix#ctrl+}"
@@ -603,11 +489,11 @@ if [ -n "$herdr_prefix" ] && [ -f tmux/tmux.conf ]; then
       shift+?) herdr_keys="$herdr_keys $(printf '%s' "${v#shift+}" | tr '[:lower:]' '[:upper:]')" ;;
       ?)       herdr_keys="$herdr_keys $v" ;;
     esac
-  done <<<"$(grep -oE '"[^"]*"' herdr/config.toml 2>/dev/null | tr -d '"')"
+  done <<<"$(grep -oE '"[^"]*"' home/dot_config/herdr/config.toml 2>/dev/null | tr -d '"')"
 
   misattributed=""
   for key in $(grep -oE '^[[:space:]]*bind(-key)?[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*"?([A-Za-z|_-])"?' \
-      tmux/tmux.conf 2>/dev/null | awk '{print $NF}' | tr -d '"' | sort -u); do
+      home/dot_config/tmux/tmux.conf 2>/dev/null | awk '{print $NF}' | tr -d '"' | sort -u); do
     case " $herdr_keys " in *" $key "*) continue ;; esac
     hits="$(git grep -n -F -- "$hp_long $key" -- ':!check.sh' 2>/dev/null || true)"
     hits="$hits$(git grep -n -F -- "$hp_short $key" -- ':!check.sh' 2>/dev/null || true)"
@@ -671,8 +557,8 @@ for f in install.sh install.common.sh install.linux.sh; do
     bash -n "$f" 2>&1 | sed 's/^/      /'
   fi
 done
-if [ -f zsh/.zshrc ] && command -v zsh >/dev/null 2>&1; then
-  zsh -n zsh/.zshrc 2>/dev/null && ok "zsh -n zsh/.zshrc" || fail "zsh -n zsh/.zshrc"
+if [ -f home/dot_zshrc ] && command -v zsh >/dev/null 2>&1; then
+  zsh -n home/dot_zshrc 2>/dev/null && ok "zsh -n home/dot_zshrc" || fail "zsh -n home/dot_zshrc"
 fi
 
 if command -v shellcheck >/dev/null 2>&1; then

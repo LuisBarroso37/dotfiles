@@ -107,7 +107,7 @@ else
   echo "   This script supports apt, dnf and pacman only — see the header." >&2
   echo "" >&2
   echo "   To use these dotfiles anyway, install the tools your distro provides" >&2
-  echo "   by hand — at minimum git, curl, zsh, tmux and stow — then re-run." >&2
+  echo "   by hand — at minimum git, curl, zsh, tmux and chezmoi — then re-run." >&2
   echo "   The GitHub-releases fallback covers most of the rest." >&2
   exit 1
 fi
@@ -176,7 +176,7 @@ echo "==> Refreshing package index"
 case "$PM" in
   apt)    $SUDO apt-get update >>"$LOG" 2>&1 || true ;;
   dnf)
-    # RHEL derivatives need EPEL for tools including stow. Fedora does not need it.
+    # RHEL derivatives need EPEL for some tools. Fedora does not need it.
     # Match ID, not ID_LIKE, so derivatives still warn if EPEL installation fails.
     $SUDO dnf install -y epel-release >>"$LOG" 2>&1 </dev/null \
       || { grep -Eq '^ID="?fedora"?$' /etc/os-release 2>/dev/null \
@@ -248,6 +248,7 @@ gh_release_repo() {
     neovim)    echo "neovim/neovim" ;;
     fzf)       echo "junegunn/fzf" ;;
     atuin)     echo "atuinsh/atuin" ;;
+    chezmoi)   echo "twpayne/chezmoi" ;;
     *)         return 1 ;;
   esac
 }
@@ -298,7 +299,7 @@ gh_release_install() {
   _pick() {
     printf '%s\n' "$urls" \
       | grep -Ei 'linux' \
-      | grep -Eiv '\.(deb|rpm|apk|msi|exe|pkg|sig|asc|pem|sha[0-9]*|sha[0-9]*sum|sbom|json|txt|appimage|zsync)$' \
+      | grep -Eiv '\.(deb|rpm|apk|msi|exe|pkg|pkg\.tar\.zst|sig|asc|pem|sha[0-9]*|sha[0-9]*sum|sbom|json|txt|appimage|zsync)$' \
       | grep -Eiv -- '-(server|update|updater)[-_.]' \
       | grep -Eiv 'android' \
       | grep -Ei "$arch_pat" \
@@ -531,7 +532,7 @@ install_tool() {
 # The last four tools provide yazi previews.
 echo "==> Installing tools (best-effort; details in $LOG)"
 for tool in \
-  git curl unzip zsh tmux stow neovim ripgrep fzf zoxide bat fd \
+  git curl unzip zsh tmux chezmoi neovim ripgrep fzf zoxide bat fd \
   gh lazygit git-delta starship atuin yazi carapace sesh herdr worktrunk \
   mise jq shellcheck ncurses fontconfig wl-clipboard xclip \
   ffmpeg sevenzip poppler imagemagick
@@ -542,7 +543,7 @@ done
 # ---------------------------------------------------------------------------
 # 4. Debian/Ubuntu binary-name fixups (fd→fdfind, bat→batcat)
 # ---------------------------------------------------------------------------
-# ~/.local/bin is already first on PATH (see zsh/.zshrc). Alias the renamed
+# ~/.local/bin is already first on PATH (see home/dot_zshrc). Alias the renamed
 # binaries back to the names the configs expect.
 if [ "$PM" = apt ]; then
   mkdir -p "$HOME/.local/bin"
@@ -689,8 +690,7 @@ hint() {
     # (0.42+); Ubuntu 22.04's 0.29 makes every fzf call in the shell fail.
     fzf)       echo "REQUIRED >= 0.48 by .zshrc's 'fzf --zsh' — GitHub releases: junegunn/fzf" ;;
     zsh)       echo "REQUIRED — none of these dotfiles load without it" ;;
-    # RHEL derivatives need EPEL to install stow.
-    stow)      echo "REQUIRED — nothing is symlinked without it. RHEL/Rocky/Alma: sudo dnf install epel-release && sudo dnf install stow" ;;
+    chezmoi)   echo "REQUIRED — no config is deployed without it. GitHub releases: twpayne/chezmoi" ;;
     mise)      echo "curl https://mise.run | sh" ;;
     sevenzip)  echo "yazi archive previews only" ;;
     poppler)   echo "yazi PDF previews only" ;;

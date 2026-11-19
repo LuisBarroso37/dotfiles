@@ -1,4 +1,4 @@
-# Portable git settings, tracked in dotfiles → stowed to ~/.config/git/config.
+# Portable git settings, tracked in dotfiles → deployed to ~/.config/git/config.
 # Machine-specific identity (user.name/email) stays in ~/.gitconfig, which is
 # untracked; git reads and merges both files.
 

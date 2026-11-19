@@ -45,7 +45,7 @@ _formulae=(
   fd
   ripgrep
   carapace
-  stow
+  chezmoi
   lazygit
   gh
   git-delta
@@ -61,7 +61,7 @@ _formulae=(
   imagemagick
 )
 
-# Homebrew stops at the first failure. Retry every formula and continue to stow.
+# Homebrew stops at the first failure. Retry every formula and continue to chezmoi.
 # Record only tools that remain missing, since a non-zero exit can leave a usable binary.
 if ! brew install "${_formulae[@]}"; then
   echo "!! 'brew install' did not complete — retrying formula by formula to find out what failed." >&2

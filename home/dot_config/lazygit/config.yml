@@ -1,5 +1,5 @@
-# lazygit config → stowed to ~/.config/lazygit/config.yml
-# (found there because XDG_CONFIG_HOME is set in zsh/.zshenv; without it lazygit
+# lazygit config → deployed to ~/.config/lazygit/config.yml
+# (found there because XDG_CONFIG_HOME is set in ~/.zshenv; without it lazygit
 # would read ~/Library/Application Support/lazygit on macOS).
 # Reference: https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md
 

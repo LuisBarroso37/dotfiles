@@ -1,0 +1,18 @@
+# Runtime files that tools write next to their tracked config. Listing them here
+# stops `chezmoi add` on a whole directory from copying them into the repo.
+# atuin's TERMINAL.md is its AI context file and can carry machine/work context.
+.config/atuin/atuin-receipt.json
+.config/atuin/TERMINAL.md
+.config/herdr/*.log
+.config/herdr/*.sock
+.config/herdr/session.json
+.config/herdr/.plugins.lock
+.config/worktrunk/approvals.toml
+
+# TPM clones every tmux plugin here at install time.
+.config/tmux/plugins
+
+# Yazi flavors are vendored so no `ya pkg install` is needed at bootstrap.
+# Skip the non-functional extras: the preview screenshot and the upstream readme.
+.config/yazi/flavors/*/preview.png
+.config/yazi/flavors/*/README.md
