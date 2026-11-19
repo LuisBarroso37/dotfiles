@@ -31,8 +31,7 @@ local PRETTIER_CONFIGS = {
 }
 
 -- vim.fs.root above only matches those exact filenames, but prettier also
--- reads config from a "prettier" key inside package.json (e.g.
--- `"prettier": "@company/prettier-config"`, a shared-config reference) — a repo
+-- reads config from a "prettier" key inside package.json — a repo
 -- using only that form has no file matching PRETTIER_CONFIGS, so the gate
 -- below fell through and prettier never ran. Walk through all ancestor
 -- package.json files: a nested package without a prettier key does not prevent
