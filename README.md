@@ -27,8 +27,6 @@ My personal dev environment — terminal, editor, shell, and CLI tools.
 | [mise](https://mise.jdx.dev) | `~/.config/mise/config.toml` (untracked) | Runtime version manager |
 | [herdr](https://herdr.dev) | `.config/herdr/config.toml` | Agent workspace multiplexer |
 | [jq](https://jqlang.github.io/jq/) | — | JSON processor |
-| [karabiner-elements](https://karabiner-elements.pqrs.org) | `macos/karabiner/karabiner.json` | macOS only — keyboard remapping |
-| [rectangle](https://rectangleapp.com) | `macos/rectangle/RectangleConfig.json` | macOS only — window manager |
 
 ---
 
@@ -160,14 +158,9 @@ stow .                     # all ~/.config packages
 stow --target="$HOME" zsh  # zsh dotfiles → ~
 ```
 
-**Three packages are excluded from `stow .`** because a symlink is the
+**Two packages are excluded from `stow .`** because a symlink is the
 wrong shape for them:
 
-- `macos/` — `install.sh` wires both by hand: `karabiner/` as a whole
-  directory (Karabiner's `rename(2)` save would orphan a file-level symlink),
-  `rectangle/RectangleConfig.json` as a copy (Rectangle refuses a symlinked
-  config). Rectangle edits made in-app don't flow back to the repo —
-  re-export over the tracked file when you change a shortcut.
 - `herdr/` — writes runtime state into `~/.config/herdr`, so it must stay a
   real directory; `install.common.sh` links only `config.toml` into it.
 - `terminfo/` — compiled into `~/.terminfo` with `tic`, not symlinked; carries
