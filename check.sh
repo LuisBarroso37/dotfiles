@@ -334,7 +334,8 @@ if command -v nvim >/dev/null 2>&1; then
     # a healthy config, so an empty file cannot distinguish "nothing to report" from
     # "the probe never ran". With the marker, presence proves the probe completed
     # and its absence is a real failure.
-    probe="$(mktemp)"; out="$(mktemp)"
+    probe_dir="$(mktemp -d)"
+    probe="$probe_dir/probe.lua"; out="$(mktemp)"
     cat >"$probe" <<'LUA'
 vim.defer_fn(function()
   local msgs = vim.api.nvim_exec2("messages", { output = true }).output or ""
@@ -382,6 +383,7 @@ LUA
     # Belt and braces: if the timeout killed `script`, the nvim child can survive
     # it. Reap anything still holding this run's probe file.
     pkill -9 -f "nvim -S $probe" 2>/dev/null || true
+    rmdir "$probe_dir"
   fi
 else
   fail "nvim not installed"
