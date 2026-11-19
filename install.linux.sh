@@ -598,6 +598,10 @@ gh_release_install() {
         rc=1
       fi
     done
+# Containers (Docker: /.dockerenv, Podman: /run/.containerenv) have no display:
+# the host terminal renders ghostty and the font, so steps 6 and 7 skip them.
+IN_CONTAINER=""
+if [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then IN_CONTAINER=1; fi
   fi
   rm -rf "$tmp"
   return "$rc"
@@ -862,7 +866,7 @@ fi
 # ---------------------------------------------------------------------------
 # (https://ghostty.org/docs/install/binary#linux)
 echo "==> Installing ghostty"
-if ! command -v ghostty >/dev/null 2>&1; then
+if [ -z "$IN_CONTAINER" ] && ! command -v ghostty >/dev/null 2>&1; then
   case "$PM" in
     pacman)
       pm_install ghostty >>"$LOG" 2>&1 || true ;;                    # official repo
@@ -875,7 +879,9 @@ if ! command -v ghostty >/dev/null 2>&1; then
     $SUDO snap install ghostty --classic >>"$LOG" 2>&1 || true
   fi
 fi
-if command -v ghostty >/dev/null 2>&1; then
+if [ -n "$IN_CONTAINER" ]; then
+  echo "   - skipped in a container"
+elif command -v ghostty >/dev/null 2>&1; then
   echo "   ✓ ghostty"
 else
   # verify_install has no check of its own for ghostty — the binary is in none of
@@ -902,7 +908,9 @@ fi
 # This used to be printed as a manual step, so a fresh machine came up with a
 # broken prompt (starship + the tmux/yazi themes are all glyph-dependent).
 echo "==> Installing JetBrainsMono Nerd Font"
-if fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd Font"; then
+if [ -n "$IN_CONTAINER" ]; then
+  echo "   - skipped in a container"
+elif fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd Font"; then
   echo "   ✓ already installed"
 elif [ "$PM" = pacman ] && pm_install ttf-jetbrains-mono-nerd >>"$LOG" 2>&1; then
   echo "   ✓ ttf-jetbrains-mono-nerd"
