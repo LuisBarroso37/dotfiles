@@ -1,11 +1,14 @@
 # The keys themselves are not in this repo. Copy them to ~/.ssh by hand.
+
+# Before any Host: inside a block it only applies when that block matches, so Linux ssh rejects UseKeychain for other hosts.
+IgnoreUnknown UseKeychain
+
 Host github-personal
   HostName github.com
   User git
   IdentityFile ~/.ssh/id_ed25519_personal
   IdentitiesOnly yes
   AddKeysToAgent yes
-  IgnoreUnknown UseKeychain
   UseKeychain yes
 {{- with get . "workGitHost" }}
 
@@ -14,6 +17,5 @@ Host {{ . }}
   IdentityFile ~/.ssh/id_ed25519_work
   IdentitiesOnly yes
   AddKeysToAgent yes
-  IgnoreUnknown UseKeychain
   UseKeychain yes
 {{- end }}
