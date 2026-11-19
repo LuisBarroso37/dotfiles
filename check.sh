@@ -356,7 +356,7 @@ fi
 if command -v tmux >/dev/null 2>&1; then
   # A throwaway socket (-L) so this cannot touch live sessions. Never use
   # source-file against the default socket here.
-  tmux_out="$(tmux -f "$DOTFILES/home/dot_config/tmux/tmux.conf" -L dotfiles_check \
+  tmux_out="$(tmux -f "$DOTFILES/home/private_dot_config/tmux/tmux.conf" -L dotfiles_check \
     start-server \; kill-server 2>&1)" || true
   if [ -n "$tmux_out" ]; then
     fail "tmux.conf produced messages on load"
@@ -458,7 +458,7 @@ criterion "C5 — doc closure (mechanical subset)"
 
 if grep -q 'wt switch' cheatsheet.md \
    && grep -q 'wt config shell init zsh' home/dot_zshrc \
-   && [ -f home/dot_config/worktrunk/config.toml ]; then
+   && [ -f home/private_dot_config/worktrunk/config.toml ]; then
   ok "Worktrunk commands, config and zsh integration are documented"
 else
   fail "Worktrunk docs, config or zsh integration missing"
@@ -472,8 +472,8 @@ fi
 # with no error. Two independent audits found exactly this, in two different
 # files, so it is a recurrence worth gating rather than a one-off typo.
 herdr_prefix="$(sed -n 's/^[[:space:]]*prefix[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
-  home/dot_config/herdr/config.toml 2>/dev/null | head -1)"
-if [ -n "$herdr_prefix" ] && [ -f home/dot_config/tmux/tmux.conf ]; then
+  home/private_dot_config/herdr/config.toml 2>/dev/null | head -1)"
+if [ -n "$herdr_prefix" ] && [ -f home/private_dot_config/tmux/tmux.conf ]; then
   # "ctrl+a" → the human spellings a doc or comment would plausibly use.
   hp_short="C-${herdr_prefix#ctrl+}"
   hp_long="Ctrl+${herdr_prefix#ctrl+}"
@@ -489,11 +489,11 @@ if [ -n "$herdr_prefix" ] && [ -f home/dot_config/tmux/tmux.conf ]; then
       shift+?) herdr_keys="$herdr_keys $(printf '%s' "${v#shift+}" | tr '[:lower:]' '[:upper:]')" ;;
       ?)       herdr_keys="$herdr_keys $v" ;;
     esac
-  done <<<"$(grep -oE '"[^"]*"' home/dot_config/herdr/config.toml 2>/dev/null | tr -d '"')"
+  done <<<"$(grep -oE '"[^"]*"' home/private_dot_config/herdr/config.toml 2>/dev/null | tr -d '"')"
 
   misattributed=""
   for key in $(grep -oE '^[[:space:]]*bind(-key)?[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*"?([A-Za-z|_-])"?' \
-      home/dot_config/tmux/tmux.conf 2>/dev/null | awk '{print $NF}' | tr -d '"' | sort -u); do
+      home/private_dot_config/tmux/tmux.conf 2>/dev/null | awk '{print $NF}' | tr -d '"' | sort -u); do
     case " $herdr_keys " in *" $key "*) continue ;; esac
     hits="$(git grep -n -F -- "$hp_long $key" -- ':!check.sh' 2>/dev/null || true)"
     hits="$hits$(git grep -n -F -- "$hp_short $key" -- ':!check.sh' 2>/dev/null || true)"

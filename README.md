@@ -37,12 +37,13 @@ source directory. It lives at `~/.local/share/chezmoi`, and `chezmoi cd` opens
 a shell there.
 
 The `.chezmoiroot` file tells chezmoi that the home directory starts at
-`home/`. chezmoi renames `dot_` to `.` when it deploys a file:
+`home/`. chezmoi renames `dot_` to `.` when it deploys a file. The `private_`
+prefix keeps `~/.config` readable only by you (mode 0700):
 
 ```
-home/dot_zshrc                    →  ~/.zshrc
-home/dot_config/nvim/init.lua     →  ~/.config/nvim/init.lua
-home/dot_config/starship.toml     →  ~/.config/starship.toml
+home/dot_zshrc                            →  ~/.zshrc
+home/private_dot_config/nvim/init.lua     →  ~/.config/nvim/init.lua
+home/private_dot_config/starship.toml     →  ~/.config/starship.toml
 ```
 
 chezmoi copies each file into place. The files in `~` are not symlinks. If you

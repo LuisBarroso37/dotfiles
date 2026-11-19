@@ -86,6 +86,8 @@ chezmoi_with_backup() {
     rel="${rel:3}"
     [ -n "$rel" ] || continue
     [ -e "$HOME/$rel" ] || [ -L "$HOME/$rel" ] || continue
+    # A real directory only differs in its mode. Moving it would take every untracked file with it.
+    if [ -d "$HOME/$rel" ] && [ ! -L "$HOME/$rel" ]; then continue; fi
     mkdir -p "$BACKUP/$(dirname "$rel")"
     mv "$HOME/$rel" "$BACKUP/$rel"
     echo "   ↳ backed up ~/$rel → $BACKUP/$rel"
