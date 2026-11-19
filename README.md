@@ -16,6 +16,7 @@ My personal dev environment: terminal, editor, shell, and CLI tools.
 | [Atuin](https://atuin.sh) | `.config/atuin/config.toml` | Shell history search |
 | [lazygit](https://github.com/jesseduffield/lazygit) | `.config/lazygit/config.yml` | Terminal git UI |
 | [yazi](https://github.com/sxyazi/yazi) | `.config/yazi/` | Terminal file manager |
+| [Git](https://git-scm.com) | `.gitconfig`, `.gitconfig-work`, `.config/git/config` | Identity and shared git settings |
 | [delta](https://github.com/dandavison/delta) | `.config/git/config` | Syntax-highlighting git diff pager |
 | [gh](https://cli.github.com) | none | GitHub CLI |
 | [zoxide](https://github.com/ajeetdsouza/zoxide) | none | Smarter `cd` |
@@ -60,6 +61,11 @@ The repo root holds what chezmoi does not deploy:
 `home/.chezmoiignore` lists runtime files that tools write next to their
 configuration, for example herdr logs, Worktrunk approvals and the tmux plugins
 that TPM clones. chezmoi never adds or deploys these files.
+
+`home/dot_gitconfig-work.tmpl` is a template. chezmoi fills in the work email
+from `~/.config/chezmoi/chezmoi.toml`, which `home/.chezmoi.toml.tmpl`
+creates at `chezmoi init`. `chezmoi re-add` skips templates, so change this
+file with `chezmoi edit ~/.gitconfig-work`.
 
 ## Daily workflow
 
@@ -161,32 +167,23 @@ untracked `install.local.sh` next to them can hold per-machine toolchains.
 
 ### 3. Restart your terminal
 
-### 4. Recreate your git identity
+### 4. Git identity
 
-The repo does not track `~/.gitconfig`, and its settings override the tracked
-`~/.config/git/config`. Write it by hand. Give it your default identity. Then
-add an `includeIf` for each directory that needs a different identity, for
-example work repos. The same override can select a different SSH key with
-`core.sshCommand`:
+chezmoi deploys the git identity. `~/.gitconfig` holds the personal identity.
+For repos under `~/Desktop/Daikin/`, it includes `~/.gitconfig-work`, which
+sets the work identity and the work SSH key.
+
+The work email stays out of this public repo. The install script runs
+`chezmoi init`, which asks for the work email once and saves it in
+`~/.config/chezmoi/chezmoi.toml`. If you leave the answer empty, chezmoi
+creates no `~/.gitconfig-work`. chezmoi asks only in a terminal, so a
+non-interactive install also gets no work file.
+
+To set or change the work email later, run:
 
 ```sh
-cat > ~/.gitconfig <<'EOF'
-[user]
-	name = Your Name
-	email = you@example.com
-
-[includeIf "gitdir:~/work-projects/"]
-	path = ~/.gitconfig-work
-EOF
-
-cat > ~/.gitconfig-work <<'EOF'
-[user]
-	name = Your Work Name
-	email = you@work.example
-
-[core]
-	sshCommand = ssh -i ~/.ssh/id_ed25519_work -o IdentitiesOnly=yes
-EOF
+chezmoi init --prompt
+chezmoi apply
 ```
 
 ### 5. Set up private-registry tokens (optional)

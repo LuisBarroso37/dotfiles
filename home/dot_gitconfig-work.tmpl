@@ -1,0 +1,9 @@
+{{- /* Rendered only when chezmoi init got a work email. An empty result means chezmoi creates no file. */ -}}
+{{- if get . "workEmail" -}}
+[user]
+	name = Luis Barroso
+	email = {{ .workEmail }}
+
+[core]
+	sshCommand = ssh -i ~/.ssh/id_ed25519_work -o IdentitiesOnly=yes
+{{ end -}}

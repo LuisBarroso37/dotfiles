@@ -1,6 +1,6 @@
 # Portable git settings, tracked in dotfiles → deployed to ~/.config/git/config.
-# Machine-specific identity (user.name/email) stays in ~/.gitconfig, which is
-# untracked; git reads and merges both files.
+# The identity (user.name/email) lives in ~/.gitconfig and ~/.gitconfig-work.
+# git reads and merges these files with this one.
 
 [core]
 	pager = delta

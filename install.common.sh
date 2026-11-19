@@ -80,6 +80,8 @@ have_tool() {
 # apply. Old Stow symlinks show up as changes too, so a Stow machine migrates here.
 chezmoi_with_backup() {
   local status rel
+  # Writes ~/.config/chezmoi/chezmoi.toml. It asks for the work git email once, on a terminal only.
+  chezmoi --source "$DOTFILES" init || return 1
   status="$(chezmoi --source "$DOTFILES" status --path-style relative)" || return 1
   # Status lines are "XY path" and sorted, so a parent moves before its children.
   while IFS= read -r rel; do
@@ -208,8 +210,6 @@ finish_install() {
 
 # Closing message. Set NEXT_STEP_FIRST beforehand to prepend a platform-specific
 # step — Linux uses it for the login-shell re-login.
-#
-# Keep machine-specific identity and includeIf rules in ~/.gitconfig, which takes precedence over the deployed Git configuration.
 print_next_steps() {
   local n=1 step
   echo ""
@@ -219,7 +219,6 @@ print_next_steps() {
     ${NEXT_STEP_FIRST:+"$NEXT_STEP_FIRST"} \
     "Restart your terminal so the new shell config is loaded." \
     "In tmux, press prefix+I to retry any plugins that failed to install." \
-    "Set your git identity in ~/.gitconfig — see the git identity section in README.md." \
     "Authenticate your forge CLI ('gh auth login' or 'glab auth login') for PR/MR lookup." \
     "Pick language runtimes: mise use -g node@lts java@corretto-25 go@latest"
   do

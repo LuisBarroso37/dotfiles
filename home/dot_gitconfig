@@ -1,0 +1,7 @@
+
+[user]
+	name = LuisBarroso37
+	email = 58770446+LuisBarroso37@users.noreply.github.com
+
+[includeIf "gitdir/i:~/Desktop/Daikin/"]
+	path = ~/.gitconfig-work
